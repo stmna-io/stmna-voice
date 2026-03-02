@@ -68,10 +68,17 @@ psql -U postgres -d stmna_voice -f ../../sql/voice-schema.sql
 
 ## Required Credentials
 
-| Credential Type | Notes |
-|----------------|-------|
-| `Postgres` | Point to your `stmna_voice` database |
-| `HTTP Header Auth` | Bearer token for authenticating incoming requests |
+Create these credential types in n8n (**Settings → Credentials → Add credential**), then reassign them after import.
+
+### `Postgres` credential
+Point to your `stmna_voice` database.
+
+| Nodes using this credential |
+|-----------------------------|
+| Save Training Pair |
+| Save Latency Metrics |
+
+These nodes are optional — they log transcription pairs and latency for model evaluation. The core transcription path works without them.
 
 ---
 

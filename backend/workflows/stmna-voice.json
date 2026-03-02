@@ -1,0 +1,1073 @@
+{
+  "name": "STMNA_Voice Transcription",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "transcribe",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node_1",
+      "name": "POST /transcribe",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        -256,
+        352
+      ],
+      "typeVersion": 1,
+      "webhookId": "YOUR_UUID",
+      "notes": "YOUR TURN: Configure webhook authentication in the n8n UI.\n\nWHAT: Receives audio files via HTTP POST (multipart/form-data).\nWHY: Single entry point for all clients (Voxtype, Android, curl).\nHOW: Listens at /webhook/transcribe. Clients POST with field 'file' containing audio (WAV, MP3, etc). Passes binary + headers downstream.\nNEXT: Set Metadata captures timing and normalizes the audio binary.\n\nGOTCHA: The external URL is /v1/audio/transcriptions (OpenAI standard). Caddy on VPS rewrites this to /webhook/transcribe before reaching n8n."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// SET METADATA — Pipeline Start\n// ============================================================\n// WHAT: Captures pipeline start time and normalizes the audio binary.\n// WHY:  Start timestamp is needed to calculate total pipeline latency.\n//       We rename the binary key to 'file' for whisper.cpp compatibility.\n// HOW:  Reads X-Client-Type header, finds uploaded audio, renames binary.\n// NEXT: Whisper STT receives the normalized 'file' binary.\n// ============================================================\n\nconst item = $input.first();\nconst now = Date.now();\n\n// Client type from custom header — clients should send X-Client-Type\n// Examples: 'voxtype', 'android', 'curl'\nconst clientType = (item.json.headers?.['x-client-type'] || 'unknown');\n\n// Find the uploaded audio binary.\n// Webhook stores multipart files as binary properties keyed by field name.\n// e.g. curl -F 'file=@audio.wav' => binary key is 'file'\nconst binaryKeys = Object.keys(item.binary || {});\nconst audioKey = binaryKeys[0] || 'data';\nconst fileSize = item.binary?.[audioKey]?.bytes || 0;\n\n// Normalize: rename to 'file' so Whisper HTTP Request always finds it\nconst newBinary = {};\nif (item.binary?.[audioKey]) {\n  newBinary.file = item.binary[audioKey];\n}\n\nreturn [{\n  json: {\n    _pipeline_start_ms: now,\n    _client_type: clientType,\n    _audio_file_size: fileSize,\n  },\n  binary: newBinary\n}];"
+      },
+      "id": "node_2",
+      "name": "Set Metadata",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -32,
+        352
+      ],
+      "typeVersion": 1,
+      "notes": "WHAT: Captures pipeline start timestamp and normalizes audio binary.\nWHY: Start timestamp is needed to calculate total pipeline latency. Binary must be renamed to 'file' for whisper.cpp compatibility.\nHOW: Reads X-Client-Type header, finds uploaded audio binary, records file size in bytes, renames binary key to 'file'.\nNEXT: Whisper STT receives the normalized 'file' binary.\n\nGOTCHA: Use .bytes (not .fileSize) for audio size -- .fileSize returns a formatted string like '32.1 kB' which breaks SQL INSERTs."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// FFMPEG CONVERT -- Audio Format Normalization\n// ============================================================\n// WHAT: Converts any input audio (m4a, ogg, webm, mp3, wav) to\n//       16kHz mono WAV -- Whisper's native format.\n// WHY:  Android apps send m4a/AAC which whisper.cpp cannot decode.\n//       Even wav files get normalized to ensure correct sample rate.\n// HOW:  Writes binary to temp file, runs ffmpeg, reads back result.\n// NEXT: Whisper STT receives a guaranteed-compatible wav file.\n// ============================================================\n\nconst { execFileSync } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\nconst item = $input.first();\n\n// Get the audio binary\nconst audioBinary = item.binary?.file;\nif (!audioBinary) {\n  throw new Error('No audio file found in binary data');\n}\n\n// Create temp file paths -- use timestamp + random to avoid collisions\nconst tmpDir = '/tmp';\nconst stamp = String(Date.now()) + '_' + Math.random().toString(36).slice(2, 8);\nconst inputPath = path.join(tmpDir, 'ffmpeg_in_' + stamp);\nconst outputPath = path.join(tmpDir, 'ffmpeg_out_' + stamp + '.wav');\n\ntry {\n  // Write incoming audio to temp file\n  const inputBuffer = await this.helpers.getBinaryDataBuffer(0, 'file');\n  fs.writeFileSync(inputPath, inputBuffer);\n  const originalBytes = inputBuffer.length;\n\n  // Convert to 16kHz mono WAV using execFileSync (no shell needed)\n  // -y: overwrite, -i: input, -ar: sample rate, -ac: channels, -f: format\n  execFileSync('/usr/bin/ffmpeg', [\n    '-y', '-i', inputPath,\n    '-ar', '16000', '-ac', '1', '-f', 'wav',\n    outputPath\n  ], { timeout: 10000, stdio: 'pipe' });\n\n  // Read back the converted file\n  const outputBuffer = fs.readFileSync(outputPath);\n\n  // Return with all original json fields preserved + conversion metadata\n  return [{\n    json: {\n      ...item.json,\n      _ffmpeg_converted: true,\n      _original_audio_bytes: originalBytes,\n      _converted_audio_bytes: outputBuffer.length,\n    },\n    binary: {\n      file: await this.helpers.prepareBinaryData(\n        outputBuffer,\n        'audio.wav',\n        'audio/wav'\n      )\n    }\n  }];\n\n} finally {\n  // Always clean up temp files\n  try { fs.unlinkSync(inputPath); } catch(e) {}\n  try { fs.unlinkSync(outputPath); } catch(e) {}\n}"
+      },
+      "id": "node_ffmpeg",
+      "name": "FFmpeg Convert",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        160,
+        352
+      ],
+      "typeVersion": 1,
+      "notes": "WHAT: Converts any audio format to 16kHz mono WAV for Whisper compatibility.\nWHY: Android clients send m4a/AAC which whisper.cpp cannot decode. Normalizes all input to Whisper's native format.\nHOW: Writes binary to temp file, runs ffmpeg -ar 16000 -ac 1 -f wav, reads back, cleans up.\nNEXT: Whisper STT receives guaranteed-compatible WAV audio.\n\nLATENCY: ~20-50ms for typical 5-30s voice clips. Negligible vs pipeline total."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://whisper-voice:8083/v1/audio/transcriptions",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "file",
+              "parameterType": "formBinaryData",
+              "inputDataFieldName": "file"
+            },
+            {
+              "name": "response_format",
+              "parameterType": "formData",
+              "value": "verbose_json"
+            },
+            {
+              "name": "prompt",
+              "parameterType": "formData",
+              "value": "Technical discussion about STMNA, n8n, Caddy, Proxmox, Claude Code, Tailscale, Forgejo, Podman, Ollama, Nextcloud, Obsidian, Wayland, PostgreSQL, Docker, Kubernetes, React, Python, TypeScript, sovereign AI, capstone, infrastructure, workflow, automation, pipeline, deployment, container, inference, embedding, RAG. Discussion technique sur STMNA, infrastructure souveraine, deploiement, conteneur, automatisation, pipeline, inference, serveur personnel, hebergement, sauvegarde, mise en production, tableau de bord, base de donnees, authentification, certificat, reverse proxy, orchestration."
+            },
+            {
+              "name": "entropy_thold",
+              "parameterType": "formData",
+              "value": "2.0"
+            },
+            {
+              "name": "no_speech_thold",
+              "parameterType": "formData",
+              "value": "0.8"
+            },
+            {
+              "name": "suppress_nst",
+              "parameterType": "formData",
+              "value": "true"
+            },
+            {
+              "name": "temperature",
+              "parameterType": "formData",
+              "value": "0.0"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "node_3",
+      "name": "Whisper STT",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        384,
+        352
+      ],
+      "typeVersion": 4.2,
+      "notes": "WHAT: Sends audio to whisper.cpp server for transcription.\nWHY: Whisper large-v3-turbo produces raw transcription. This is the first half of the STT pipeline.\nHOW: HTTP POST to Desk (YOUR_HOST_IP:8083/v1/audio/transcriptions) with multipart form-data: audio file + response_format=verbose_json + bilingual initial_prompt for domain vocabulary.\nNEXT: Process Whisper Response extracts text and detected language.\n\nDESIGN: verbose_json gives us detected_language + word-level confidence. initial_prompt biases Whisper's token prediction toward tech vocabulary in both EN and FR. Timeout: 30s for long audio clips."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// PROCESS WHISPER RESPONSE\n// ============================================================\n// WHAT: Extracts raw transcript + detected language from whisper.cpp\n//       verbose_json response.\n// WHY:  Language detection is passed to Qwen so it knows whether to\n//       correct in English or French (prevents unwanted translation).\n// HOW:  Reads verbose_json fields, prepends [LANGUAGE: X] tag to\n//       the user message for Qwen.\n// NEXT: Qwen Polish sends the prepared request to llama-server.\n// ============================================================\n\nconst whisperResponse = $input.first().json;\nconst metadata = $('Set Metadata').first().json;\nconst now = Date.now();\n\n// Extract raw transcript and detected language from verbose_json\nconst rawTranscript = (whisperResponse.text || '').replace(/\\n/g, ' ').trim();\nconst detectedLang = (whisperResponse.detected_language || 'english');\n// Capitalize first letter for the tag\nconst langLabel = detectedLang.charAt(0).toUpperCase() + detectedLang.slice(1);\n\n// Build the Qwen chat completion request body\n// Prepend [LANGUAGE: X] tag so the 3B model has a clear signal\nconst qwenRequest = {\n  model: 'qwen3-4b-voice',\n  messages: [\n    {\n      role: 'system',\n      content: \"You are a dictation post-processor. Your ONLY job: fix transcription errors from Whisper. Return corrected text ONLY.\\n\\nCRITICAL RULE: The user message starts with [LANGUAGE: X]. You MUST return text in THAT language. If [LANGUAGE: English], return English. If [LANGUAGE: French], return French. NEVER translate between languages.\\n\\n**Language rules:**\\n- Correct within the SAME language as indicated by the [LANGUAGE] tag\\n- If the input mixes languages within a sentence, preserve the mix and correct each part in its own language\\n- If unsure, return the input unchanged\\n\\n**Common accent patterns to fix (when English):**\\nze/the, zis/this, zat/that, sink/think, sank/thank, dis/this, dat/that. Missing articles (a, an, the), wrong prepositions from literal translation, misplaced word order from French sentence structure.\\n\\n**Common accent patterns to fix (when French):**\\nMissing or incorrect liaisons, dropped aspirated H confusion (les haricots vs les zaricots), anglicisms spelled phonetically (le meeting -> la reunion only if clearly misheard, NOT if intentionally used), incorrect gender agreement, missing accents. Southern French (Provence/Marseille) spoken contractions: tias -> tu as, ties -> tu es, j'suis -> je suis, t'as -> tu as, t'es -> tu es, y'a -> il y a. The schwa stays alive in southern speech -- Whisper may merge or split syllables incorrectly, fix segmentation without changing meaning. Remove \\\"hein\\\" and \\\"euh\\\" fillers unless intentional.\\n\\n**Regional expressions to preserve (NEVER correct to standard French):**\\npeuchere, bou Diou, oh fan, tchatcher, degun, escagasser, minot, gave, fada, cagole, tarpin, emboucaner, ensuquer, la bonne mere.\\n\\n**Domain vocabulary (both languages):**\\nSTMNA, STMNA_Voice, STMNA_Flow, STMNA_Desk, STMNA_Build, STMNA_Brain, STMNA_Core, STMNA_Automate, n8n, Caddy, Proxmox, Tailscale, Forgejo, Podman, Ollama, Nextcloud, Obsidian, Wayland, PostgreSQL, Docker, Kubernetes, React, TypeScript, Python, Fedora, Whisper, Qwen, LoRA, ROCm, Vulkan, OpenVINO, GGML, GGUF, Voxtype, PipeWire, systemd, capstone, sovereign, infrastructure, homeserver, webhook, hebergement, deploiement, conteneur, pipeline, inference, orchestration, tableau de bord, mise en production, sauvegarde.\\n\\n**Rules:**\\n- NEVER change meaning or add content\\n- NEVER translate -- output language MUST match the [LANGUAGE] tag\\n- NEVER explain changes\\n- Return ONLY the corrected text (without the [LANGUAGE] tag)\\n- If input looks correct, return it unchanged\"\n    },\n    {\n      role: 'user',\n      content: `[LANGUAGE: ${langLabel}]\\n${rawTranscript}`\n    }\n  ],\n  temperature: 0.1,\n  max_tokens: 2048\n};\n\nreturn [{\n  json: {\n    raw_transcript: rawTranscript,\n    detected_language: detectedLang,\n    _whisper_done_ms: now,\n    _whisper_duration_ms: now - metadata._pipeline_start_ms,\n    _qwen_request: qwenRequest\n  }\n}];"
+      },
+      "id": "node_4",
+      "name": "Process Whisper Response",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        660,
+        352
+      ],
+      "typeVersion": 1,
+      "notes": "WHAT: Extracts raw transcript and language, builds Qwen request.\nWHY: Bridges Whisper output to Qwen input. The [LANGUAGE: X] tag prevents Qwen from translating between languages.\nHOW: Reads verbose_json text + detected_language. Cleans newlines. Builds OpenAI chat completion request body with bilingual system prompt and prepends [LANGUAGE: English/French] to user message.\nNEXT: Qwen Polish sends the prepared request to llama-server.\n\nDESIGN: The 3B Qwen model needs an explicit language tag because the bilingual system prompt (mentioning French patterns) can confuse it into translating English input to French."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://YOUR_HOST_IP:8081/v1/chat/completions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json._qwen_request) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "node_5",
+      "name": "Qwen Polish",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        896,
+        352
+      ],
+      "typeVersion": 4.2,
+      "notes": "WHAT: Sends raw transcript to Qwen3 4B for accent/grammar correction.\nWHY: Fixes Whisper transcription errors that acoustic model can't: accent patterns (ze/the), missing articles, French contractions, etc.\nHOW: HTTP POST to Desk llama-server (YOUR_HOST_IP:8081/v1/chat/completions). Uses the _qwen_request body built by Process Whisper Response.\nNEXT: Format Response extracts polished text for the client.\n\nDESIGN: Qwen runs on EVERY request in Phase 1 -- no confidence-based skipping. Rationale: (1) Quality first. (2) Maximum training pairs. Skipping moves to Phase 4+ after LoRA fine-tuning."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n  // FORMAT RESPONSE\n  // ============================================================\n  // WHAT: Creates the final response — plain text or JSON depending\n  //       on the client's requested response_format.\n  // WHY:  Whisper-to-Input (Android) sends response_format=text and\n  //       reads response.body as-is (no JSON parsing). Other clients\n  //       expect OpenAI-compatible JSON {text, task, language}.\n  // HOW:  Checks response_format from the original webhook form data.\n  //       Returns _responseBody for the Respond to Webhook node.\n  // NEXT: Respond to Webhook sends _responseBody to the client.\n  // ============================================================\n\n  const qwenResponse = $input.first().json;\n  const whisperData = $('Process Whisper Response').first().json;\n\n  // Read response_format from the original webhook form data\n  // Whisper-to-Input sends 'text', curl/Voxtype send 'json' or nothing\n  const webhookData = $('POST /transcribe').first().json;\n  const responseFormat = (webhookData.body?.response_format || 'json');\n\n  // Extract polished text. Clean newlines. Fallback to raw transcript.\n  const polishedText = (qwenResponse.choices?.[0]?.message?.content || whisperData.raw_transcript)\n    .replace(/\\n/g, ' ')\n    .trim();\n\n  // Detected language from Whisper (e.g. 'english' -> 'en')\n  const detectedLang = whisperData.detected_language || 'english';\n  const langCode = detectedLang.substring(0, 2);\n\n  if (responseFormat === 'text') {\n    // Plain text — Android app reads response.body as-is\n    return [{ json: {\n      _responseBody: polishedText,\n      text: polishedText,\n      task: 'transcribe',\n      language: langCode\n    }}];\n  } else {\n    // OpenAI-compatible JSON string\n    return [{ json: {\n      _responseBody: JSON.stringify({ text: polishedText, task: 'transcribe', language: langCode }),\n      text: polishedText,\n      task: 'transcribe',\n      language: langCode\n    }}];\n  }"
+      },
+      "id": "node_6",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        1216,
+        352
+      ],
+      "typeVersion": 1,
+      "notes": "WHAT: Creates OpenAI-compatible transcription response JSON.\nWHY: Standard format means all STT clients (Voxtype, Android apps) work out of the box without custom parsing.\nHOW: Extracts polished text from Qwen response, detected language from Whisper, wraps in {text, task, language} format.\nNEXT: Respond to Webhook sends this to the client.\n\nGOTCHA: Cleans newlines from polished text (.replace) since verbose_json can include \\n characters that break client display."
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json._responseBody }}",
+        "options": {}
+      },
+      "id": "node_7",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [
+        1392,
+        352
+      ],
+      "typeVersion": 1,
+      "notes": "WHAT: Returns the polished transcription to the HTTP client.\nWHY: This is where the client gets their text back. Everything after this point is async and does NOT block the response.\nHOW: Sends the Format Response JSON as HTTP 200 response.\nNEXT: Async branch fires to save training data + latency metrics.\n\nDESIGN: The async branch (training data + metrics) runs AFTER this node responds. The user gets polished text in ~300ms; DB writes happen in the background without adding latency."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// PREPARE TRAINING DATA (Async — runs AFTER response sent)\n// ============================================================\n// WHAT: Builds INSERT query for voice_training_pairs table.\n// WHY:  Every request produces a (raw, polished) training pair.\n//       These pairs fuel future Whisper LoRA fine-tuning on Desk.\n//       See Spec Section 6 for the full training data lifecycle.\n// DESIGN DECISION: Qwen runs on EVERY request in Phase 1.\n//       No confidence-based skipping — maximize training data first.\n// ============================================================\n\nconst metadata = $('Set Metadata').first().json;\nconst whisperData = $('Process Whisper Response').first().json;\nconst responseData = $input.first().json;\nconst now = Date.now();\nconst totalMs = now - metadata._pipeline_start_ms;\nconst qwenMs = totalMs - whisperData._whisper_duration_ms;\n\n// SQL-safe string escaping\nconst esc = (s) => (s || '').replace(/'/g, \"''\");\n\nconst query = `INSERT INTO voice_training_pairs (raw_transcript, polished_transcript, language, client_type, whisper_model, qwen_model, whisper_duration_ms, qwen_duration_ms, total_duration_ms, needs_correction) VALUES ('${esc(whisperData.raw_transcript)}', '${esc(responseData.text)}', 'en', '${esc(metadata._client_type)}', 'large-v3-turbo-q5', 'qwen3-4b-voice', ${Math.round(whisperData._whisper_duration_ms)}, ${Math.round(qwenMs)}, ${Math.round(totalMs)}, ${responseData.text !== whisperData.raw_transcript})`;\n\nreturn [{ json: { _query: query } }];"
+      },
+      "id": "node_8",
+      "name": "Prepare Training Data",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        1728,
+        160
+      ],
+      "typeVersion": 1,
+      "notes": "WHAT: Builds the SQL INSERT values for the training pairs table.\nWHY: Every request produces a (raw, polished) transcript pair. These pairs will be used for LoRA fine-tuning of Whisper.\nHOW: Collects raw_transcript, polished_transcript, timing data, model names, detected language. Sets needs_correction = true if raw != polished (meaning Qwen made changes).\nNEXT: Save Training Pair writes to PostgreSQL."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json._query }}",
+        "additionalFields": {}
+      },
+      "id": "node_9",
+      "name": "Save Training Pair",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        1952,
+        160
+      ],
+      "typeVersion": 1,
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_POSTGRES_CREDENTIAL"
+        }
+      },
+      "notes": "YOUR TURN: Set up PostgreSQL credentials in n8n UI.\n\nWHAT: INSERT into voice_training_pairs table.\nWHY: Training data accumulates with daily use. Target: 50+ hours of approved pairs before first LoRA fine-tune (quarterly).\nHOW: Uses n8n PostgreSQL node with 'Postgres account' credential. Connects to postgres-voice container on stmna_voice database.\nNEXT: None (end of training data branch).\n\nGOTCHA: Credential host must be 'postgres-voice' (container name), not the host IP. n8n reaches postgres via Podman external network."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// PREPARE LATENCY DATA (Async — runs AFTER response sent)\n// ============================================================\n// WHAT: Builds INSERT query for voice_latency_metrics table.\n// WHY:  Per-request timing breakdown enables Grafana dashboards,\n//       A/B model comparisons, regression detection, and\n//       fine-tune impact measurement. See Spec Section 7.\n// ============================================================\n\nconst metadata = $('Set Metadata').first().json;\nconst whisperData = $('Process Whisper Response').first().json;\nconst responseData = $input.first().json;\nconst now = Date.now();\nconst totalMs = now - metadata._pipeline_start_ms;\nconst qwenMs = totalMs - whisperData._whisper_duration_ms;\n\nconst esc = (s) => (s || '').replace(/'/g, \"''\");\n\nconst query = `INSERT INTO voice_latency_metrics (client_type, audio_file_size_bytes, whisper_inference_ms, whisper_total_ms, qwen_inference_ms, total_pipeline_ms, whisper_model, qwen_model, language, transcript_length) VALUES ('${esc(metadata._client_type)}', ${metadata._audio_file_size || 0}, ${Math.round(whisperData._whisper_duration_ms)}, ${Math.round(whisperData._whisper_duration_ms)}, ${Math.round(qwenMs)}, ${Math.round(totalMs)}, 'large-v3-turbo-q5', 'qwen3-4b-voice', 'en', ${responseData.text?.length || 0})`;\n\nreturn [{ json: { _query: query } }];"
+      },
+      "id": "node_10",
+      "name": "Prepare Latency Data",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        1728,
+        352
+      ],
+      "typeVersion": 1,
+      "notes": "WHAT: Builds the SQL INSERT values for the latency metrics table.\nWHY: Per-request timing enables dashboards, regression detection, A/B model comparisons, and portfolio evidence.\nHOW: Calculates whisper_total_ms, qwen_inference_ms, total_pipeline_ms from timestamps captured at each stage. Generates UUID request_id.\nNEXT: Save Latency Metrics writes to PostgreSQL."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json._query }}",
+        "additionalFields": {}
+      },
+      "id": "node_11",
+      "name": "Save Latency Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        1952,
+        352
+      ],
+      "typeVersion": 1,
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_POSTGRES_CREDENTIAL"
+        }
+      },
+      "notes": "YOUR TURN: Uses same PostgreSQL credentials as Save Training Pair.\n\nWHAT: INSERT into voice_latency_metrics table.\nWHY: Latency data feeds Grafana dashboards and optimization decisions.\nHOW: Same PostgreSQL connection as Save Training Pair.\nNEXT: None (end of latency branch).\n\nDESIGN: Both DB writes are async -- they run after Respond to Webhook has already sent the response to the client."
+    },
+    {
+      "parameters": {
+        "content": "## INGESTION\n\nWebhook receives audio + Set Metadata captures timing.\n\nClients POST to /v1/audio/transcriptions (Caddy rewrites to /webhook/transcribe).\nSupported formats: WAV, MP3, OGG, WebM.\nField name: 'file' (OpenAI standard).",
+        "height": 436,
+        "width": 440,
+        "color": 2
+      },
+      "name": "Section: INGESTION",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -320,
+        128
+      ],
+      "id": "YOUR_UUID"
+    },
+    {
+      "parameters": {
+        "content": "## TRANSCRIPTION\n\nWhisper STT transcribes audio on Desk (YOUR_HOST_IP:8083).\n\nModel: large-v3-turbo Q5 (~3-4GB VRAM)\nOutput: verbose_json with detected_language\nBilingual initial_prompt biases toward EN/FR tech vocabulary.",
+        "height": 468,
+        "width": 392,
+        "color": 4
+      },
+      "name": "Section: TRANSCRIPTION",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        320,
+        128
+      ],
+      "id": "YOUR_UUID"
+    },
+    {
+      "parameters": {
+        "content": "## POST-PROCESSING\n\nQwen3 4B corrects accent/grammar errors.\n\nRuns on EVERY request (Phase 1 -- no skipping).\nBilingual: detects EN/FR from Whisper, corrects in same language.\nModel: Q4_K_M (~2.5GB) on Desk llama-server (YOUR_HOST_IP:8081).",
+        "height": 484,
+        "width": 360,
+        "color": 6
+      },
+      "name": "Section: POST-PROCESSING",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        768,
+        128
+      ],
+      "id": "YOUR_UUID"
+    },
+    {
+      "parameters": {
+        "content": "## RESPONSE\n\nFormat + return polished text to client.\n\nOpenAI-compatible JSON: {text, task, language}.\nClient gets response in ~300ms (warm) before async logging starts.",
+        "height": 420,
+        "width": 340
+      },
+      "name": "Section: RESPONSE",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1184,
+        128
+      ],
+      "id": "YOUR_UUID"
+    },
+    {
+      "parameters": {
+        "content": "## ASYNC LOGGING\n\nDoes NOT block the webhook response.\n\nSaves to PostgreSQL (postgres-voice on Desk):\n- voice_training_pairs: raw/polished pairs for LoRA fine-tuning\n- voice_latency_metrics: per-request timing for dashboards\n\nAudio archive to Nextcloud (AppsVM YOUR_HOST_IP):\n- PLACEHOLDER -- configure Nextcloud WebDAV when ready\n- Path: /STMNA_Voice/audio/YYYY-MM-DD/filename.wav",
+        "height": 852,
+        "width": 596,
+        "color": 3
+      },
+      "name": "Section: ASYNC LOGGING",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1584,
+        -128
+      ],
+      "id": "YOUR_UUID"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// PREPARE AUDIO ARCHIVE (PLACEHOLDER)\n// ============================================================\n// WHAT: Prepares metadata for Nextcloud WebDAV upload.\n// WHY:  Audio files archived to Nextcloud for training data review\n//       and LoRA fine-tuning dataset export.\n// STATUS: Placeholder -- Archive to Nextcloud node is a NoOp.\n//         Configure when Nextcloud WebDAV access is set up.\n// TARGET: AppsVM Nextcloud (YOUR_HOST_IP)\n// ============================================================\n\n// Pass through -- nothing to do until Nextcloud is configured\nconst metadata = $('Set Metadata').first().json;\nconst whisperData = $('Process Whisper Response').first().json;\n\nconst now = new Date();\nconst datePath = now.toISOString().split('T')[0]; // YYYY-MM-DD\nconst filename = `voice_${now.getTime()}.wav`;\n\nreturn [{\n  json: {\n    _archive_path: `/STMNA_Voice/audio/${datePath}/${filename}`,\n    _archive_status: 'placeholder_not_configured',\n    _detected_language: whisperData.detected_language || 'unknown'\n  }\n}];\n"
+      },
+      "id": "YOUR_UUID",
+      "name": "Prepare Audio Archive",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        560
+      ],
+      "notes": "PLACEHOLDER -- Not yet connected to Nextcloud.\n\nWHAT: Prepares the upload path and metadata for Nextcloud WebDAV.\nWHY: Audio files need to be archived for training data review and LoRA fine-tuning dataset export.\nHOW: Will use HTTP Request node with WebDAV PUT to Nextcloud on AppsVM (YOUR_HOST_IP). Path: /STMNA_Voice/audio/YYYY-MM-DD/filename.wav\nNEXT: Archive to Nextcloud (currently NoOp).\n\nYOUR TURN: When ready, replace the NoOp with an HTTP Request node configured for Nextcloud WebDAV. You'll need:\n- Nextcloud WebDAV URL: https://YOUR_NEXTCLOUD_DOMAIN/remote.php/dav/files/USER/\n- Nextcloud app password for authentication\n- Create the /STMNA_Voice/audio/ folder in Nextcloud first"
+    },
+    {
+      "parameters": {},
+      "id": "YOUR_UUID",
+      "name": "Archive to Nextcloud",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1952,
+        560
+      ],
+      "notes": "PLACEHOLDER -- NoOp (does nothing).\n\nYOUR TURN: Replace this NoOp with an HTTP Request node when Nextcloud WebDAV is configured.\n\nThe HTTP Request should:\n- Method: PUT\n- URL: https://YOUR_NEXTCLOUD_DOMAIN/remote.php/dav/files/USER{{ $json._archive_path }}\n- Auth: Basic auth with Nextcloud app password\n- Body: Binary data (the original audio file)\n- Send the audio from the webhook's binary data"
+    },
+    {
+      "id": "YOUR_UUID",
+      "name": "Hallucination Filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        464,
+        520
+      ],
+      "parameters": {
+        "jsCode": "// ============================================================\n// HALLUCINATION FILTER — Post-Whisper Cleanup\n// ============================================================\n// WHAT: Detects and handles common Whisper hallucination patterns\n//       before passing to Qwen for polishing.\n// WHY:  Whisper hallucinates on short/noisy audio — outputs random\n//       phrases like \"Thank you\", \"Tschüss\", \"Gracias\" or even\n//       wrong-alphabet text that was never spoken.\n// HOW:  Five detection methods:\n//       1. Known phantom phrases (YouTube training artifacts)\n//       2. Non-Latin script detection (Japanese/Chinese/Arabic etc.)\n//       3. Segment confidence from verbose_json (no_speech_prob)\n//       4. Repetition detection (same phrase looping 3+ times)\n//       5. Tail segment trimming (trailing phantoms / low-confidence)\n// NEXT: Process Whisper Response gets clean transcript.\n// ============================================================\n\nconst whisperResponse = $input.first().json;\n\n// --- 1. KNOWN PHANTOM PHRASES ---\n// Common Whisper artifacts from YouTube training data.\nconst PHANTOM_PHRASES = [\n  'thank you', 'thanks', 'thanks for watching', 'thanks for listening',\n  'thank you for watching', 'thank you for listening',\n  'goodbye', 'bye', 'bye bye', 'bye-bye',\n  'tschüss', 'tschuss', 'tschuess',\n  'gracias', 'adiós', 'adios',\n  'arrivederci', 'ciao',\n  'okay', 'ok',\n  'subtitles by', 'subtitled by', 'sous-titres',\n  'please subscribe', 'like and subscribe',\n  'see you next time', 'see you later', 'see you',\n  'à bientôt', 'a bientot', 'au revoir',\n  'you', 'the end', 'fin',\n  '...',\n  'thats good to meet you', 'nice to meet you',\n  'merci', 'merci beaucoup', 'merci de votre attention',\n  'cest bon de vous rencontrer',\n];\n\nconst rawText = (whisperResponse.text || '').trim();\nconst normalized = rawText.toLowerCase().replace(/[.,!?…\\-''`]+/g, '').trim();\n\nconst isPhantom = PHANTOM_PHRASES.some(p => normalized === p);\n\n// --- 2. NON-LATIN SCRIPT DETECTION ---\nconst nonLatinPattern = /[\\u3000-\\u9FFF\\uAC00-\\uD7AF\\u0600-\\u06FF\\u0400-\\u04FF\\u1100-\\u11FF\\uA960-\\uA97F\\uD7B0-\\uD7FF\\u3040-\\u309F\\u30A0-\\u30FF\\u31F0-\\u31FF\\uFF00-\\uFFEF]/;\nconst hasNonLatin = nonLatinPattern.test(rawText);\n\n// --- 3. SEGMENT CONFIDENCE CHECK ---\nconst segments = whisperResponse.segments || [];\nlet highNoSpeechCount = 0;\nconst totalSegments = segments.length;\n\nfor (const seg of segments) {\n  if ((seg.no_speech_prob || 0) > 0.7) {\n    highNoSpeechCount++;\n  }\n}\nconst allNoSpeech = totalSegments > 0 && highNoSpeechCount === totalSegments;\n\n// --- 4. REPETITION DETECTION ---\nlet cleanedText = rawText;\nconst sentences = rawText.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 0);\nif (sentences.length >= 3) {\n  const counts = {};\n  for (const s of sentences) {\n    const key = s.toLowerCase();\n    counts[key] = (counts[key] || 0) + 1;\n  }\n  const repeated = Object.entries(counts).filter(([k, v]) => v >= 3);\n  if (repeated.length > 0) {\n    const seen = new Set();\n    const deduped = [];\n    for (const s of sentences) {\n      const key = s.toLowerCase();\n      if (!seen.has(key)) {\n        seen.add(key);\n        deduped.push(s);\n      }\n    }\n    cleanedText = deduped.join('. ') + '.';\n  }\n}\n\n// --- 5. TAIL SEGMENT TRIMMING ---\n// Walk segments from the end. Strip if:\n//   a) Segment text (normalized) matches a known phantom phrase, OR\n//   b) Average word probability is below threshold (low confidence)\n// Stop as soon as we hit a good segment.\n// Only runs when there are 2+ segments (never strip the only segment).\nconst TAIL_PROB_THRESHOLD = 0.45;\nlet trimmedSegments = [];\nlet tailTrimmed = false;\nlet trimmedTexts = [];\n\nif (segments.length >= 2) {\n  let cutIndex = segments.length;\n  for (let i = segments.length - 1; i >= 1; i--) {\n    const seg = segments[i];\n    const segText = (seg.text || '').trim();\n    const segNorm = segText.toLowerCase().replace(/[.,!?…\\-''`]+/g, '').trim();\n\n    const isSegPhantom = PHANTOM_PHRASES.some(p => segNorm === p);\n\n    let avgProb = 1.0;\n    const words = seg.words || [];\n    if (words.length > 0) {\n      const sum = words.reduce((acc, w) => acc + (w.probability || 0), 0);\n      avgProb = sum / words.length;\n    }\n\n    if (isSegPhantom || avgProb < TAIL_PROB_THRESHOLD) {\n      cutIndex = i;\n      trimmedTexts.push(segText + ' (phantom=' + isSegPhantom + ', avgProb=' + avgProb.toFixed(3) + ')');\n    } else {\n      break;\n    }\n  }\n\n  if (cutIndex < segments.length) {\n    trimmedSegments = segments.slice(0, cutIndex);\n    tailTrimmed = true;\n    cleanedText = trimmedSegments.map(s => (s.text || '').trim()).join(' ');\n  }\n}\n\n// --- DECISION ---\nlet hallucination_detected = false;\nlet hallucination_type = null;\nlet finalText = cleanedText;\n\nif (hasNonLatin) {\n  hallucination_detected = true;\n  hallucination_type = 'wrong_script';\n  finalText = '';\n} else if (isPhantom && (allNoSpeech || totalSegments <= 1)) {\n  hallucination_detected = true;\n  hallucination_type = 'phantom_phrase';\n  finalText = '';\n} else if (isPhantom && normalized.split(/\\s+/).length <= 3) {\n  hallucination_detected = true;\n  hallucination_type = 'short_phantom';\n  finalText = '';\n} else if (allNoSpeech && totalSegments > 0) {\n  hallucination_detected = true;\n  hallucination_type = 'no_speech';\n  finalText = '';\n} else if (tailTrimmed) {\n  hallucination_detected = true;\n  hallucination_type = 'tail_trimmed';\n} else if (cleanedText !== rawText) {\n  hallucination_detected = true;\n  hallucination_type = 'repetition_cleaned';\n  finalText = cleanedText;\n}\n\nreturn [{\n  json: {\n    ...whisperResponse,\n    text: finalText,\n    segments: tailTrimmed ? trimmedSegments : whisperResponse.segments,\n    _original_text: rawText,\n    _hallucination_detected: hallucination_detected,\n    _hallucination_type: hallucination_type,\n    _tail_trimmed: tailTrimmed ? trimmedTexts : null,\n  }\n}];"
+      },
+      "notes": "WHAT: Catches Whisper hallucination before Qwen polishing.\nWHY: Short/noisy audio makes Whisper output phantom phrases (Thank you, Tschüss, Gracias) or repeat text. Cleaning here prevents Qwen from polishing garbage.\nHOW: Three detection methods: (1) known phantom phrases, (2) segment no_speech_prob from verbose_json, (3) repetition detection.\nNEXT: Process Whisper Response gets clean transcript.\n\nWhen hallucination is detected, sets text to empty string. Downstream nodes handle empty transcript gracefully."
+    }
+  ],
+  "connections": {
+    "POST /transcribe": {
+      "main": [
+        [
+          {
+            "node": "Set Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Metadata": {
+      "main": [
+        [
+          {
+            "node": "FFmpeg Convert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Whisper Response": {
+      "main": [
+        [
+          {
+            "node": "Qwen Polish",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qwen Polish": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Training Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Latency Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Audio Archive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Training Data": {
+      "main": [
+        [
+          {
+            "node": "Save Training Pair",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Latency Data": {
+      "main": [
+        [
+          {
+            "node": "Save Latency Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Audio Archive": {
+      "main": [
+        [
+          {
+            "node": "Archive to Nextcloud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FFmpeg Convert": {
+      "main": [
+        [
+          {
+            "node": "Whisper STT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper STT": {
+      "main": [
+        [
+          {
+            "node": "Hallucination Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hallucination Filter": {
+      "main": [
+        [
+          {
+            "node": "Process Whisper Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {},
+  "activeVersionId": "YOUR_UUID",
+  "versionCounter": 255,
+  "triggerCount": 1,
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-02-28T21:15:39.202Z",
+    "createdAt": "2026-02-28T21:15:39.202Z",
+    "versionId": "YOUR_UUID",
+    "workflowId": "xonOhK0L8fIqGawZ",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "transcribe",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "node_1",
+        "name": "POST /transcribe",
+        "type": "n8n-nodes-base.webhook",
+        "position": [
+          -256,
+          352
+        ],
+        "typeVersion": 1,
+        "webhookId": "YOUR_UUID",
+        "notes": "YOUR TURN: Configure webhook authentication in the n8n UI.\n\nWHAT: Receives audio files via HTTP POST (multipart/form-data).\nWHY: Single entry point for all clients (Voxtype, Android, curl).\nHOW: Listens at /webhook/transcribe. Clients POST with field 'file' containing audio (WAV, MP3, etc). Passes binary + headers downstream.\nNEXT: Set Metadata captures timing and normalizes the audio binary.\n\nGOTCHA: The external URL is /v1/audio/transcriptions (OpenAI standard). Caddy on VPS rewrites this to /webhook/transcribe before reaching n8n."
+      },
+      {
+        "parameters": {
+          "jsCode": "// ============================================================\n// SET METADATA — Pipeline Start\n// ============================================================\n// WHAT: Captures pipeline start time and normalizes the audio binary.\n// WHY:  Start timestamp is needed to calculate total pipeline latency.\n//       We rename the binary key to 'file' for whisper.cpp compatibility.\n// HOW:  Reads X-Client-Type header, finds uploaded audio, renames binary.\n// NEXT: Whisper STT receives the normalized 'file' binary.\n// ============================================================\n\nconst item = $input.first();\nconst now = Date.now();\n\n// Client type from custom header — clients should send X-Client-Type\n// Examples: 'voxtype', 'android', 'curl'\nconst clientType = (item.json.headers?.['x-client-type'] || 'unknown');\n\n// Find the uploaded audio binary.\n// Webhook stores multipart files as binary properties keyed by field name.\n// e.g. curl -F 'file=@audio.wav' => binary key is 'file'\nconst binaryKeys = Object.keys(item.binary || {});\nconst audioKey = binaryKeys[0] || 'data';\nconst fileSize = item.binary?.[audioKey]?.bytes || 0;\n\n// Normalize: rename to 'file' so Whisper HTTP Request always finds it\nconst newBinary = {};\nif (item.binary?.[audioKey]) {\n  newBinary.file = item.binary[audioKey];\n}\n\nreturn [{\n  json: {\n    _pipeline_start_ms: now,\n    _client_type: clientType,\n    _audio_file_size: fileSize,\n  },\n  binary: newBinary\n}];"
+        },
+        "id": "node_2",
+        "name": "Set Metadata",
+        "type": "n8n-nodes-base.code",
+        "position": [
+          -32,
+          352
+        ],
+        "typeVersion": 1,
+        "notes": "WHAT: Captures pipeline start timestamp and normalizes audio binary.\nWHY: Start timestamp is needed to calculate total pipeline latency. Binary must be renamed to 'file' for whisper.cpp compatibility.\nHOW: Reads X-Client-Type header, finds uploaded audio binary, records file size in bytes, renames binary key to 'file'.\nNEXT: Whisper STT receives the normalized 'file' binary.\n\nGOTCHA: Use .bytes (not .fileSize) for audio size -- .fileSize returns a formatted string like '32.1 kB' which breaks SQL INSERTs."
+      },
+      {
+        "parameters": {
+          "jsCode": "// ============================================================\n// FFMPEG CONVERT -- Audio Format Normalization\n// ============================================================\n// WHAT: Converts any input audio (m4a, ogg, webm, mp3, wav) to\n//       16kHz mono WAV -- Whisper's native format.\n// WHY:  Android apps send m4a/AAC which whisper.cpp cannot decode.\n//       Even wav files get normalized to ensure correct sample rate.\n// HOW:  Writes binary to temp file, runs ffmpeg, reads back result.\n// NEXT: Whisper STT receives a guaranteed-compatible wav file.\n// ============================================================\n\nconst { execFileSync } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\nconst item = $input.first();\n\n// Get the audio binary\nconst audioBinary = item.binary?.file;\nif (!audioBinary) {\n  throw new Error('No audio file found in binary data');\n}\n\n// Create temp file paths -- use timestamp + random to avoid collisions\nconst tmpDir = '/tmp';\nconst stamp = String(Date.now()) + '_' + Math.random().toString(36).slice(2, 8);\nconst inputPath = path.join(tmpDir, 'ffmpeg_in_' + stamp);\nconst outputPath = path.join(tmpDir, 'ffmpeg_out_' + stamp + '.wav');\n\ntry {\n  // Write incoming audio to temp file\n  const inputBuffer = await this.helpers.getBinaryDataBuffer(0, 'file');\n  fs.writeFileSync(inputPath, inputBuffer);\n  const originalBytes = inputBuffer.length;\n\n  // Convert to 16kHz mono WAV using execFileSync (no shell needed)\n  // -y: overwrite, -i: input, -ar: sample rate, -ac: channels, -f: format\n  execFileSync('/usr/bin/ffmpeg', [\n    '-y', '-i', inputPath,\n    '-ar', '16000', '-ac', '1', '-f', 'wav',\n    outputPath\n  ], { timeout: 10000, stdio: 'pipe' });\n\n  // Read back the converted file\n  const outputBuffer = fs.readFileSync(outputPath);\n\n  // Return with all original json fields preserved + conversion metadata\n  return [{\n    json: {\n      ...item.json,\n      _ffmpeg_converted: true,\n      _original_audio_bytes: originalBytes,\n      _converted_audio_bytes: outputBuffer.length,\n    },\n    binary: {\n      file: await this.helpers.prepareBinaryData(\n        outputBuffer,\n        'audio.wav',\n        'audio/wav'\n      )\n    }\n  }];\n\n} finally {\n  // Always clean up temp files\n  try { fs.unlinkSync(inputPath); } catch(e) {}\n  try { fs.unlinkSync(outputPath); } catch(e) {}\n}"
+        },
+        "id": "node_ffmpeg",
+        "name": "FFmpeg Convert",
+        "type": "n8n-nodes-base.code",
+        "position": [
+          160,
+          352
+        ],
+        "typeVersion": 1,
+        "notes": "WHAT: Converts any audio format to 16kHz mono WAV for Whisper compatibility.\nWHY: Android clients send m4a/AAC which whisper.cpp cannot decode. Normalizes all input to Whisper's native format.\nHOW: Writes binary to temp file, runs ffmpeg -ar 16000 -ac 1 -f wav, reads back, cleans up.\nNEXT: Whisper STT receives guaranteed-compatible WAV audio.\n\nLATENCY: ~20-50ms for typical 5-30s voice clips. Negligible vs pipeline total."
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://whisper-voice:8083/v1/audio/transcriptions",
+          "sendBody": true,
+          "contentType": "multipart-form-data",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "file",
+                "parameterType": "formBinaryData",
+                "inputDataFieldName": "file"
+              },
+              {
+                "name": "response_format",
+                "parameterType": "formData",
+                "value": "verbose_json"
+              },
+              {
+                "name": "prompt",
+                "parameterType": "formData",
+                "value": "Technical discussion about STMNA, n8n, Caddy, Proxmox, Claude Code, Tailscale, Forgejo, Podman, Ollama, Nextcloud, Obsidian, Wayland, PostgreSQL, Docker, Kubernetes, React, Python, TypeScript, sovereign AI, capstone, infrastructure, workflow, automation, pipeline, deployment, container, inference, embedding, RAG. Discussion technique sur STMNA, infrastructure souveraine, deploiement, conteneur, automatisation, pipeline, inference, serveur personnel, hebergement, sauvegarde, mise en production, tableau de bord, base de donnees, authentification, certificat, reverse proxy, orchestration."
+              },
+              {
+                "name": "entropy_thold",
+                "parameterType": "formData",
+                "value": "2.0"
+              },
+              {
+                "name": "no_speech_thold",
+                "parameterType": "formData",
+                "value": "0.8"
+              },
+              {
+                "name": "suppress_nst",
+                "parameterType": "formData",
+                "value": "true"
+              },
+              {
+                "name": "temperature",
+                "parameterType": "formData",
+                "value": "0.0"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "node_3",
+        "name": "Whisper STT",
+        "type": "n8n-nodes-base.httpRequest",
+        "position": [
+          384,
+          352
+        ],
+        "typeVersion": 4.2,
+        "notes": "WHAT: Sends audio to whisper.cpp server for transcription.\nWHY: Whisper large-v3-turbo produces raw transcription. This is the first half of the STT pipeline.\nHOW: HTTP POST to Desk (YOUR_HOST_IP:8083/v1/audio/transcriptions) with multipart form-data: audio file + response_format=verbose_json + bilingual initial_prompt for domain vocabulary.\nNEXT: Process Whisper Response extracts text and detected language.\n\nDESIGN: verbose_json gives us detected_language + word-level confidence. initial_prompt biases Whisper's token prediction toward tech vocabulary in both EN and FR. Timeout: 30s for long audio clips."
+      },
+      {
+        "parameters": {
+          "jsCode": "// ============================================================\n// PROCESS WHISPER RESPONSE\n// ============================================================\n// WHAT: Extracts raw transcript + detected language from whisper.cpp\n//       verbose_json response.\n// WHY:  Language detection is passed to Qwen so it knows whether to\n//       correct in English or French (prevents unwanted translation).\n// HOW:  Reads verbose_json fields, prepends [LANGUAGE: X] tag to\n//       the user message for Qwen.\n// NEXT: Qwen Polish sends the prepared request to llama-server.\n// ============================================================\n\nconst whisperResponse = $input.first().json;\nconst metadata = $('Set Metadata').first().json;\nconst now = Date.now();\n\n// Extract raw transcript and detected language from verbose_json\nconst rawTranscript = (whisperResponse.text || '').replace(/\\n/g, ' ').trim();\nconst detectedLang = (whisperResponse.detected_language || 'english');\n// Capitalize first letter for the tag\nconst langLabel = detectedLang.charAt(0).toUpperCase() + detectedLang.slice(1);\n\n// Build the Qwen chat completion request body\n// Prepend [LANGUAGE: X] tag so the 3B model has a clear signal\nconst qwenRequest = {\n  model: 'qwen3-4b-voice',\n  messages: [\n    {\n      role: 'system',\n      content: \"You are a dictation post-processor. Your ONLY job: fix transcription errors from Whisper. Return corrected text ONLY.\\n\\nCRITICAL RULE: The user message starts with [LANGUAGE: X]. You MUST return text in THAT language. If [LANGUAGE: English], return English. If [LANGUAGE: French], return French. NEVER translate between languages.\\n\\n**Language rules:**\\n- Correct within the SAME language as indicated by the [LANGUAGE] tag\\n- If the input mixes languages within a sentence, preserve the mix and correct each part in its own language\\n- If unsure, return the input unchanged\\n\\n**Common accent patterns to fix (when English):**\\nze/the, zis/this, zat/that, sink/think, sank/thank, dis/this, dat/that. Missing articles (a, an, the), wrong prepositions from literal translation, misplaced word order from French sentence structure.\\n\\n**Common accent patterns to fix (when French):**\\nMissing or incorrect liaisons, dropped aspirated H confusion (les haricots vs les zaricots), anglicisms spelled phonetically (le meeting -> la reunion only if clearly misheard, NOT if intentionally used), incorrect gender agreement, missing accents. Southern French (Provence/Marseille) spoken contractions: tias -> tu as, ties -> tu es, j'suis -> je suis, t'as -> tu as, t'es -> tu es, y'a -> il y a. The schwa stays alive in southern speech -- Whisper may merge or split syllables incorrectly, fix segmentation without changing meaning. Remove \\\"hein\\\" and \\\"euh\\\" fillers unless intentional.\\n\\n**Regional expressions to preserve (NEVER correct to standard French):**\\npeuchere, bou Diou, oh fan, tchatcher, degun, escagasser, minot, gave, fada, cagole, tarpin, emboucaner, ensuquer, la bonne mere.\\n\\n**Domain vocabulary (both languages):**\\nSTMNA, STMNA_Voice, STMNA_Flow, STMNA_Desk, STMNA_Build, STMNA_Brain, STMNA_Core, STMNA_Automate, n8n, Caddy, Proxmox, Tailscale, Forgejo, Podman, Ollama, Nextcloud, Obsidian, Wayland, PostgreSQL, Docker, Kubernetes, React, TypeScript, Python, Fedora, Whisper, Qwen, LoRA, ROCm, Vulkan, OpenVINO, GGML, GGUF, Voxtype, PipeWire, systemd, capstone, sovereign, infrastructure, homeserver, webhook, hebergement, deploiement, conteneur, pipeline, inference, orchestration, tableau de bord, mise en production, sauvegarde.\\n\\n**Rules:**\\n- NEVER change meaning or add content\\n- NEVER translate -- output language MUST match the [LANGUAGE] tag\\n- NEVER explain changes\\n- Return ONLY the corrected text (without the [LANGUAGE] tag)\\n- If input looks correct, return it unchanged\"\n    },\n    {\n      role: 'user',\n      content: `[LANGUAGE: ${langLabel}]\\n${rawTranscript}`\n    }\n  ],\n  temperature: 0.1,\n  max_tokens: 2048\n};\n\nreturn [{\n  json: {\n    raw_transcript: rawTranscript,\n    detected_language: detectedLang,\n    _whisper_done_ms: now,\n    _whisper_duration_ms: now - metadata._pipeline_start_ms,\n    _qwen_request: qwenRequest\n  }\n}];"
+        },
+        "id": "node_4",
+        "name": "Process Whisper Response",
+        "type": "n8n-nodes-base.code",
+        "position": [
+          660,
+          352
+        ],
+        "typeVersion": 1,
+        "notes": "WHAT: Extracts raw transcript and language, builds Qwen request.\nWHY: Bridges Whisper output to Qwen input. The [LANGUAGE: X] tag prevents Qwen from translating between languages.\nHOW: Reads verbose_json text + detected_language. Cleans newlines. Builds OpenAI chat completion request body with bilingual system prompt and prepends [LANGUAGE: English/French] to user message.\nNEXT: Qwen Polish sends the prepared request to llama-server.\n\nDESIGN: The 3B Qwen model needs an explicit language tag because the bilingual system prompt (mentioning French patterns) can confuse it into translating English input to French."
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://YOUR_HOST_IP:8081/v1/chat/completions",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json._qwen_request) }}",
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "node_5",
+        "name": "Qwen Polish",
+        "type": "n8n-nodes-base.httpRequest",
+        "position": [
+          896,
+          352
+        ],
+        "typeVersion": 4.2,
+        "notes": "WHAT: Sends raw transcript to Qwen3 4B for accent/grammar correction.\nWHY: Fixes Whisper transcription errors that acoustic model can't: accent patterns (ze/the), missing articles, French contractions, etc.\nHOW: HTTP POST to Desk llama-server (YOUR_HOST_IP:8081/v1/chat/completions). Uses the _qwen_request body built by Process Whisper Response.\nNEXT: Format Response extracts polished text for the client.\n\nDESIGN: Qwen runs on EVERY request in Phase 1 -- no confidence-based skipping. Rationale: (1) Quality first. (2) Maximum training pairs. Skipping moves to Phase 4+ after LoRA fine-tuning."
+      },
+      {
+        "parameters": {
+          "jsCode": "// ============================================================\n  // FORMAT RESPONSE\n  // ============================================================\n  // WHAT: Creates the final response — plain text or JSON depending\n  //       on the client's requested response_format.\n  // WHY:  Whisper-to-Input (Android) sends response_format=text and\n  //       reads response.body as-is (no JSON parsing). Other clients\n  //       expect OpenAI-compatible JSON {text, task, language}.\n  // HOW:  Checks response_format from the original webhook form data.\n  //       Returns _responseBody for the Respond to Webhook node.\n  // NEXT: Respond to Webhook sends _responseBody to the client.\n  // ============================================================\n\n  const qwenResponse = $input.first().json;\n  const whisperData = $('Process Whisper Response').first().json;\n\n  // Read response_format from the original webhook form data\n  // Whisper-to-Input sends 'text', curl/Voxtype send 'json' or nothing\n  const webhookData = $('POST /transcribe').first().json;\n  const responseFormat = (webhookData.body?.response_format || 'json');\n\n  // Extract polished text. Clean newlines. Fallback to raw transcript.\n  const polishedText = (qwenResponse.choices?.[0]?.message?.content || whisperData.raw_transcript)\n    .replace(/\\n/g, ' ')\n    .trim();\n\n  // Detected language from Whisper (e.g. 'english' -> 'en')\n  const detectedLang = whisperData.detected_language || 'english';\n  const langCode = detectedLang.substring(0, 2);\n\n  if (responseFormat === 'text') {\n    // Plain text — Android app reads response.body as-is\n    return [{ json: {\n      _responseBody: polishedText,\n      text: polishedText,\n      task: 'transcribe',\n      language: langCode\n    }}];\n  } else {\n    // OpenAI-compatible JSON string\n    return [{ json: {\n      _responseBody: JSON.stringify({ text: polishedText, task: 'transcribe', language: langCode }),\n      text: polishedText,\n      task: 'transcribe',\n      language: langCode\n    }}];\n  }"
+        },
+        "id": "node_6",
+        "name": "Format Response",
+        "type": "n8n-nodes-base.code",
+        "position": [
+          1216,
+          352
+        ],
+        "typeVersion": 1,
+        "notes": "WHAT: Creates OpenAI-compatible transcription response JSON.\nWHY: Standard format means all STT clients (Voxtype, Android apps) work out of the box without custom parsing.\nHOW: Extracts polished text from Qwen response, detected language from Whisper, wraps in {text, task, language} format.\nNEXT: Respond to Webhook sends this to the client.\n\nGOTCHA: Cleans newlines from polished text (.replace) since verbose_json can include \\n characters that break client display."
+      },
+      {
+        "parameters": {
+          "respondWith": "text",
+          "responseBody": "={{ $json._responseBody }}",
+          "options": {}
+        },
+        "id": "node_7",
+        "name": "Respond to Webhook",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "position": [
+          1392,
+          352
+        ],
+        "typeVersion": 1,
+        "notes": "WHAT: Returns the polished transcription to the HTTP client.\nWHY: This is where the client gets their text back. Everything after this point is async and does NOT block the response.\nHOW: Sends the Format Response JSON as HTTP 200 response.\nNEXT: Async branch fires to save training data + latency metrics.\n\nDESIGN: The async branch (training data + metrics) runs AFTER this node responds. The user gets polished text in ~300ms; DB writes happen in the background without adding latency."
+      },
+      {
+        "parameters": {
+          "jsCode": "// ============================================================\n// PREPARE TRAINING DATA (Async — runs AFTER response sent)\n// ============================================================\n// WHAT: Builds INSERT query for voice_training_pairs table.\n// WHY:  Every request produces a (raw, polished) training pair.\n//       These pairs fuel future Whisper LoRA fine-tuning on Desk.\n//       See Spec Section 6 for the full training data lifecycle.\n// DESIGN DECISION: Qwen runs on EVERY request in Phase 1.\n//       No confidence-based skipping — maximize training data first.\n// ============================================================\n\nconst metadata = $('Set Metadata').first().json;\nconst whisperData = $('Process Whisper Response').first().json;\nconst responseData = $input.first().json;\nconst now = Date.now();\nconst totalMs = now - metadata._pipeline_start_ms;\nconst qwenMs = totalMs - whisperData._whisper_duration_ms;\n\n// SQL-safe string escaping\nconst esc = (s) => (s || '').replace(/'/g, \"''\");\n\nconst query = `INSERT INTO voice_training_pairs (raw_transcript, polished_transcript, language, client_type, whisper_model, qwen_model, whisper_duration_ms, qwen_duration_ms, total_duration_ms, needs_correction) VALUES ('${esc(whisperData.raw_transcript)}', '${esc(responseData.text)}', 'en', '${esc(metadata._client_type)}', 'large-v3-turbo-q5', 'qwen3-4b-voice', ${Math.round(whisperData._whisper_duration_ms)}, ${Math.round(qwenMs)}, ${Math.round(totalMs)}, ${responseData.text !== whisperData.raw_transcript})`;\n\nreturn [{ json: { _query: query } }];"
+        },
+        "id": "node_8",
+        "name": "Prepare Training Data",
+        "type": "n8n-nodes-base.code",
+        "position": [
+          1728,
+          160
+        ],
+        "typeVersion": 1,
+        "notes": "WHAT: Builds the SQL INSERT values for the training pairs table.\nWHY: Every request produces a (raw, polished) transcript pair. These pairs will be used for LoRA fine-tuning of Whisper.\nHOW: Collects raw_transcript, polished_transcript, timing data, model names, detected language. Sets needs_correction = true if raw != polished (meaning Qwen made changes).\nNEXT: Save Training Pair writes to PostgreSQL."
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "={{ $json._query }}",
+          "additionalFields": {}
+        },
+        "id": "node_9",
+        "name": "Save Training Pair",
+        "type": "n8n-nodes-base.postgres",
+        "position": [
+          1952,
+          160
+        ],
+        "typeVersion": 1,
+        "credentials": {
+          "postgres": {
+            "id": "knX8Fm1l1MTW1K9k",
+            "name": "Postgres account"
+          }
+        },
+        "notes": "YOUR TURN: Set up PostgreSQL credentials in n8n UI.\n\nWHAT: INSERT into voice_training_pairs table.\nWHY: Training data accumulates with daily use. Target: 50+ hours of approved pairs before first LoRA fine-tune (quarterly).\nHOW: Uses n8n PostgreSQL node with 'Postgres account' credential. Connects to postgres-voice container on stmna_voice database.\nNEXT: None (end of training data branch).\n\nGOTCHA: Credential host must be 'postgres-voice' (container name), not the host IP. n8n reaches postgres via Podman external network."
+      },
+      {
+        "parameters": {
+          "jsCode": "// ============================================================\n// PREPARE LATENCY DATA (Async — runs AFTER response sent)\n// ============================================================\n// WHAT: Builds INSERT query for voice_latency_metrics table.\n// WHY:  Per-request timing breakdown enables Grafana dashboards,\n//       A/B model comparisons, regression detection, and\n//       fine-tune impact measurement. See Spec Section 7.\n// ============================================================\n\nconst metadata = $('Set Metadata').first().json;\nconst whisperData = $('Process Whisper Response').first().json;\nconst responseData = $input.first().json;\nconst now = Date.now();\nconst totalMs = now - metadata._pipeline_start_ms;\nconst qwenMs = totalMs - whisperData._whisper_duration_ms;\n\nconst esc = (s) => (s || '').replace(/'/g, \"''\");\n\nconst query = `INSERT INTO voice_latency_metrics (client_type, audio_file_size_bytes, whisper_inference_ms, whisper_total_ms, qwen_inference_ms, total_pipeline_ms, whisper_model, qwen_model, language, transcript_length) VALUES ('${esc(metadata._client_type)}', ${metadata._audio_file_size || 0}, ${Math.round(whisperData._whisper_duration_ms)}, ${Math.round(whisperData._whisper_duration_ms)}, ${Math.round(qwenMs)}, ${Math.round(totalMs)}, 'large-v3-turbo-q5', 'qwen3-4b-voice', 'en', ${responseData.text?.length || 0})`;\n\nreturn [{ json: { _query: query } }];"
+        },
+        "id": "node_10",
+        "name": "Prepare Latency Data",
+        "type": "n8n-nodes-base.code",
+        "position": [
+          1728,
+          352
+        ],
+        "typeVersion": 1,
+        "notes": "WHAT: Builds the SQL INSERT values for the latency metrics table.\nWHY: Per-request timing enables dashboards, regression detection, A/B model comparisons, and portfolio evidence.\nHOW: Calculates whisper_total_ms, qwen_inference_ms, total_pipeline_ms from timestamps captured at each stage. Generates UUID request_id.\nNEXT: Save Latency Metrics writes to PostgreSQL."
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "={{ $json._query }}",
+          "additionalFields": {}
+        },
+        "id": "node_11",
+        "name": "Save Latency Metrics",
+        "type": "n8n-nodes-base.postgres",
+        "position": [
+          1952,
+          352
+        ],
+        "typeVersion": 1,
+        "credentials": {
+          "postgres": {
+            "id": "knX8Fm1l1MTW1K9k",
+            "name": "Postgres account"
+          }
+        },
+        "notes": "YOUR TURN: Uses same PostgreSQL credentials as Save Training Pair.\n\nWHAT: INSERT into voice_latency_metrics table.\nWHY: Latency data feeds Grafana dashboards and optimization decisions.\nHOW: Same PostgreSQL connection as Save Training Pair.\nNEXT: None (end of latency branch).\n\nDESIGN: Both DB writes are async -- they run after Respond to Webhook has already sent the response to the client."
+      },
+      {
+        "parameters": {
+          "content": "## INGESTION\n\nWebhook receives audio + Set Metadata captures timing.\n\nClients POST to /v1/audio/transcriptions (Caddy rewrites to /webhook/transcribe).\nSupported formats: WAV, MP3, OGG, WebM.\nField name: 'file' (OpenAI standard).",
+          "height": 436,
+          "width": 440,
+          "color": 2
+        },
+        "name": "Section: INGESTION",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -320,
+          128
+        ],
+        "id": "YOUR_UUID"
+      },
+      {
+        "parameters": {
+          "content": "## TRANSCRIPTION\n\nWhisper STT transcribes audio on Desk (YOUR_HOST_IP:8083).\n\nModel: large-v3-turbo Q5 (~3-4GB VRAM)\nOutput: verbose_json with detected_language\nBilingual initial_prompt biases toward EN/FR tech vocabulary.",
+          "height": 468,
+          "width": 392,
+          "color": 4
+        },
+        "name": "Section: TRANSCRIPTION",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          320,
+          128
+        ],
+        "id": "YOUR_UUID"
+      },
+      {
+        "parameters": {
+          "content": "## POST-PROCESSING\n\nQwen3 4B corrects accent/grammar errors.\n\nRuns on EVERY request (Phase 1 -- no skipping).\nBilingual: detects EN/FR from Whisper, corrects in same language.\nModel: Q4_K_M (~2.5GB) on Desk llama-server (YOUR_HOST_IP:8081).",
+          "height": 484,
+          "width": 360,
+          "color": 6
+        },
+        "name": "Section: POST-PROCESSING",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          768,
+          128
+        ],
+        "id": "YOUR_UUID"
+      },
+      {
+        "parameters": {
+          "content": "## RESPONSE\n\nFormat + return polished text to client.\n\nOpenAI-compatible JSON: {text, task, language}.\nClient gets response in ~300ms (warm) before async logging starts.",
+          "height": 420,
+          "width": 340
+        },
+        "name": "Section: RESPONSE",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          1184,
+          128
+        ],
+        "id": "YOUR_UUID"
+      },
+      {
+        "parameters": {
+          "content": "## ASYNC LOGGING\n\nDoes NOT block the webhook response.\n\nSaves to PostgreSQL (postgres-voice on Desk):\n- voice_training_pairs: raw/polished pairs for LoRA fine-tuning\n- voice_latency_metrics: per-request timing for dashboards\n\nAudio archive to Nextcloud (AppsVM YOUR_HOST_IP):\n- PLACEHOLDER -- configure Nextcloud WebDAV when ready\n- Path: /STMNA_Voice/audio/YYYY-MM-DD/filename.wav",
+          "height": 852,
+          "width": 596,
+          "color": 3
+        },
+        "name": "Section: ASYNC LOGGING",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          1584,
+          -128
+        ],
+        "id": "YOUR_UUID"
+      },
+      {
+        "parameters": {
+          "jsCode": "// ============================================================\n// PREPARE AUDIO ARCHIVE (PLACEHOLDER)\n// ============================================================\n// WHAT: Prepares metadata for Nextcloud WebDAV upload.\n// WHY:  Audio files archived to Nextcloud for training data review\n//       and LoRA fine-tuning dataset export.\n// STATUS: Placeholder -- Archive to Nextcloud node is a NoOp.\n//         Configure when Nextcloud WebDAV access is set up.\n// TARGET: AppsVM Nextcloud (YOUR_HOST_IP)\n// ============================================================\n\n// Pass through -- nothing to do until Nextcloud is configured\nconst metadata = $('Set Metadata').first().json;\nconst whisperData = $('Process Whisper Response').first().json;\n\nconst now = new Date();\nconst datePath = now.toISOString().split('T')[0]; // YYYY-MM-DD\nconst filename = `voice_${now.getTime()}.wav`;\n\nreturn [{\n  json: {\n    _archive_path: `/STMNA_Voice/audio/${datePath}/${filename}`,\n    _archive_status: 'placeholder_not_configured',\n    _detected_language: whisperData.detected_language || 'unknown'\n  }\n}];\n"
+        },
+        "id": "YOUR_UUID",
+        "name": "Prepare Audio Archive",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1728,
+          560
+        ],
+        "notes": "PLACEHOLDER -- Not yet connected to Nextcloud.\n\nWHAT: Prepares the upload path and metadata for Nextcloud WebDAV.\nWHY: Audio files need to be archived for training data review and LoRA fine-tuning dataset export.\nHOW: Will use HTTP Request node with WebDAV PUT to Nextcloud on AppsVM (YOUR_HOST_IP). Path: /STMNA_Voice/audio/YYYY-MM-DD/filename.wav\nNEXT: Archive to Nextcloud (currently NoOp).\n\nYOUR TURN: When ready, replace the NoOp with an HTTP Request node configured for Nextcloud WebDAV. You'll need:\n- Nextcloud WebDAV URL: https://YOUR_NEXTCLOUD_DOMAIN/remote.php/dav/files/USER/\n- Nextcloud app password for authentication\n- Create the /STMNA_Voice/audio/ folder in Nextcloud first"
+      },
+      {
+        "parameters": {},
+        "id": "YOUR_UUID",
+        "name": "Archive to Nextcloud",
+        "type": "n8n-nodes-base.noOp",
+        "typeVersion": 1,
+        "position": [
+          1952,
+          560
+        ],
+        "notes": "PLACEHOLDER -- NoOp (does nothing).\n\nYOUR TURN: Replace this NoOp with an HTTP Request node when Nextcloud WebDAV is configured.\n\nThe HTTP Request should:\n- Method: PUT\n- URL: https://YOUR_NEXTCLOUD_DOMAIN/remote.php/dav/files/USER{{ $json._archive_path }}\n- Auth: Basic auth with Nextcloud app password\n- Body: Binary data (the original audio file)\n- Send the audio from the webhook's binary data"
+      },
+      {
+        "id": "YOUR_UUID",
+        "name": "Hallucination Filter",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 1,
+        "position": [
+          464,
+          520
+        ],
+        "parameters": {
+          "jsCode": "// ============================================================\n// HALLUCINATION FILTER — Post-Whisper Cleanup\n// ============================================================\n// WHAT: Detects and handles common Whisper hallucination patterns\n//       before passing to Qwen for polishing.\n// WHY:  Whisper hallucinates on short/noisy audio — outputs random\n//       phrases like \"Thank you\", \"Tschüss\", \"Gracias\" or even\n//       wrong-alphabet text that was never spoken.\n// HOW:  Five detection methods:\n//       1. Known phantom phrases (YouTube training artifacts)\n//       2. Non-Latin script detection (Japanese/Chinese/Arabic etc.)\n//       3. Segment confidence from verbose_json (no_speech_prob)\n//       4. Repetition detection (same phrase looping 3+ times)\n//       5. Tail segment trimming (trailing phantoms / low-confidence)\n// NEXT: Process Whisper Response gets clean transcript.\n// ============================================================\n\nconst whisperResponse = $input.first().json;\n\n// --- 1. KNOWN PHANTOM PHRASES ---\n// Common Whisper artifacts from YouTube training data.\nconst PHANTOM_PHRASES = [\n  'thank you', 'thanks', 'thanks for watching', 'thanks for listening',\n  'thank you for watching', 'thank you for listening',\n  'goodbye', 'bye', 'bye bye', 'bye-bye',\n  'tschüss', 'tschuss', 'tschuess',\n  'gracias', 'adiós', 'adios',\n  'arrivederci', 'ciao',\n  'okay', 'ok',\n  'subtitles by', 'subtitled by', 'sous-titres',\n  'please subscribe', 'like and subscribe',\n  'see you next time', 'see you later', 'see you',\n  'à bientôt', 'a bientot', 'au revoir',\n  'you', 'the end', 'fin',\n  '...',\n  'thats good to meet you', 'nice to meet you',\n  'merci', 'merci beaucoup', 'merci de votre attention',\n  'cest bon de vous rencontrer',\n];\n\nconst rawText = (whisperResponse.text || '').trim();\nconst normalized = rawText.toLowerCase().replace(/[.,!?…\\-''`]+/g, '').trim();\n\nconst isPhantom = PHANTOM_PHRASES.some(p => normalized === p);\n\n// --- 2. NON-LATIN SCRIPT DETECTION ---\nconst nonLatinPattern = /[\\u3000-\\u9FFF\\uAC00-\\uD7AF\\u0600-\\u06FF\\u0400-\\u04FF\\u1100-\\u11FF\\uA960-\\uA97F\\uD7B0-\\uD7FF\\u3040-\\u309F\\u30A0-\\u30FF\\u31F0-\\u31FF\\uFF00-\\uFFEF]/;\nconst hasNonLatin = nonLatinPattern.test(rawText);\n\n// --- 3. SEGMENT CONFIDENCE CHECK ---\nconst segments = whisperResponse.segments || [];\nlet highNoSpeechCount = 0;\nconst totalSegments = segments.length;\n\nfor (const seg of segments) {\n  if ((seg.no_speech_prob || 0) > 0.7) {\n    highNoSpeechCount++;\n  }\n}\nconst allNoSpeech = totalSegments > 0 && highNoSpeechCount === totalSegments;\n\n// --- 4. REPETITION DETECTION ---\nlet cleanedText = rawText;\nconst sentences = rawText.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 0);\nif (sentences.length >= 3) {\n  const counts = {};\n  for (const s of sentences) {\n    const key = s.toLowerCase();\n    counts[key] = (counts[key] || 0) + 1;\n  }\n  const repeated = Object.entries(counts).filter(([k, v]) => v >= 3);\n  if (repeated.length > 0) {\n    const seen = new Set();\n    const deduped = [];\n    for (const s of sentences) {\n      const key = s.toLowerCase();\n      if (!seen.has(key)) {\n        seen.add(key);\n        deduped.push(s);\n      }\n    }\n    cleanedText = deduped.join('. ') + '.';\n  }\n}\n\n// --- 5. TAIL SEGMENT TRIMMING ---\n// Walk segments from the end. Strip if:\n//   a) Segment text (normalized) matches a known phantom phrase, OR\n//   b) Average word probability is below threshold (low confidence)\n// Stop as soon as we hit a good segment.\n// Only runs when there are 2+ segments (never strip the only segment).\nconst TAIL_PROB_THRESHOLD = 0.45;\nlet trimmedSegments = [];\nlet tailTrimmed = false;\nlet trimmedTexts = [];\n\nif (segments.length >= 2) {\n  let cutIndex = segments.length;\n  for (let i = segments.length - 1; i >= 1; i--) {\n    const seg = segments[i];\n    const segText = (seg.text || '').trim();\n    const segNorm = segText.toLowerCase().replace(/[.,!?…\\-''`]+/g, '').trim();\n\n    const isSegPhantom = PHANTOM_PHRASES.some(p => segNorm === p);\n\n    let avgProb = 1.0;\n    const words = seg.words || [];\n    if (words.length > 0) {\n      const sum = words.reduce((acc, w) => acc + (w.probability || 0), 0);\n      avgProb = sum / words.length;\n    }\n\n    if (isSegPhantom || avgProb < TAIL_PROB_THRESHOLD) {\n      cutIndex = i;\n      trimmedTexts.push(segText + ' (phantom=' + isSegPhantom + ', avgProb=' + avgProb.toFixed(3) + ')');\n    } else {\n      break;\n    }\n  }\n\n  if (cutIndex < segments.length) {\n    trimmedSegments = segments.slice(0, cutIndex);\n    tailTrimmed = true;\n    cleanedText = trimmedSegments.map(s => (s.text || '').trim()).join(' ');\n  }\n}\n\n// --- DECISION ---\nlet hallucination_detected = false;\nlet hallucination_type = null;\nlet finalText = cleanedText;\n\nif (hasNonLatin) {\n  hallucination_detected = true;\n  hallucination_type = 'wrong_script';\n  finalText = '';\n} else if (isPhantom && (allNoSpeech || totalSegments <= 1)) {\n  hallucination_detected = true;\n  hallucination_type = 'phantom_phrase';\n  finalText = '';\n} else if (isPhantom && normalized.split(/\\s+/).length <= 3) {\n  hallucination_detected = true;\n  hallucination_type = 'short_phantom';\n  finalText = '';\n} else if (allNoSpeech && totalSegments > 0) {\n  hallucination_detected = true;\n  hallucination_type = 'no_speech';\n  finalText = '';\n} else if (tailTrimmed) {\n  hallucination_detected = true;\n  hallucination_type = 'tail_trimmed';\n} else if (cleanedText !== rawText) {\n  hallucination_detected = true;\n  hallucination_type = 'repetition_cleaned';\n  finalText = cleanedText;\n}\n\nreturn [{\n  json: {\n    ...whisperResponse,\n    text: finalText,\n    segments: tailTrimmed ? trimmedSegments : whisperResponse.segments,\n    _original_text: rawText,\n    _hallucination_detected: hallucination_detected,\n    _hallucination_type: hallucination_type,\n    _tail_trimmed: tailTrimmed ? trimmedTexts : null,\n  }\n}];"
+        },
+        "notes": "WHAT: Catches Whisper hallucination before Qwen polishing.\nWHY: Short/noisy audio makes Whisper output phantom phrases (Thank you, Tschüss, Gracias) or repeat text. Cleaning here prevents Qwen from polishing garbage.\nHOW: Three detection methods: (1) known phantom phrases, (2) segment no_speech_prob from verbose_json, (3) repetition detection.\nNEXT: Process Whisper Response gets clean transcript.\n\nWhen hallucination is detected, sets text to empty string. Downstream nodes handle empty transcript gracefully."
+      }
+    ],
+    "connections": {
+      "POST /transcribe": {
+        "main": [
+          [
+            {
+              "node": "Set Metadata",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Set Metadata": {
+        "main": [
+          [
+            {
+              "node": "FFmpeg Convert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Process Whisper Response": {
+        "main": [
+          [
+            {
+              "node": "Qwen Polish",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Qwen Polish": {
+        "main": [
+          [
+            {
+              "node": "Format Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Response": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Respond to Webhook": {
+        "main": [
+          [
+            {
+              "node": "Prepare Training Data",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Prepare Latency Data",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Prepare Audio Archive",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Training Data": {
+        "main": [
+          [
+            {
+              "node": "Save Training Pair",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Latency Data": {
+        "main": [
+          [
+            {
+              "node": "Save Latency Metrics",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Audio Archive": {
+        "main": [
+          [
+            {
+              "node": "Archive to Nextcloud",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "FFmpeg Convert": {
+        "main": [
+          [
+            {
+              "node": "Whisper STT",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Whisper STT": {
+        "main": [
+          [
+            {
+              "node": "Hallucination Filter",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Hallucination Filter": {
+        "main": [
+          [
+            {
+              "node": "Process Whisper Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "n8n admin",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-02-28T21:15:39.268Z",
+        "id": 587,
+        "workflowId": "xonOhK0L8fIqGawZ",
+        "versionId": "YOUR_UUID",
+        "event": "activated",
+        "userId": "YOUR_UUID"
+      },
+      {
+        "createdAt": "2026-02-28T21:15:39.344Z",
+        "id": 589,
+        "workflowId": "xonOhK0L8fIqGawZ",
+        "versionId": "YOUR_UUID",
+        "event": "activated",
+        "userId": "YOUR_UUID"
+      },
+      {
+        "createdAt": "2026-02-28T21:15:39.244Z",
+        "id": 586,
+        "workflowId": "xonOhK0L8fIqGawZ",
+        "versionId": "YOUR_UUID",
+        "event": "deactivated",
+        "userId": "YOUR_UUID"
+      },
+      {
+        "createdAt": "2026-02-28T21:15:39.302Z",
+        "id": 588,
+        "workflowId": "xonOhK0L8fIqGawZ",
+        "versionId": "YOUR_UUID",
+        "event": "deactivated",
+        "userId": "YOUR_UUID"
+      }
+    ]
+  }
+}

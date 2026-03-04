@@ -1,30 +1,94 @@
 # STMNA Voice — Workflow Reference
 
-This directory contains the n8n workflow for the STMNA Voice transcription pipeline.
+This directory contains the n8n workflow for the STMNA Voice transcription pipeline. It takes audio input via HTTP POST, transcribes it with whisper.cpp, cleans the transcript with a small LLM, and returns the result. The whole round-trip averages 2.4 seconds.
 
 ---
 
 ## Workflow Overview
 
 ```
-Incoming audio file (POST /webhook/voice)
+Audio file (POST /webhook/transcribe)
         │
         ▼
 ┌──────────────────────────────┐
 │   STMNA_Voice Transcription  │
 │                              │
-│  1. Authenticate request     │
-│  2. Receive audio binary     │
-│  3. Send to whisper.cpp      │
-│  4. Clean transcript (LLM)   │
-│  5. Log to PostgreSQL        │
-│  6. Return transcript        │
+│  1. Set metadata + timing    │
+│  2. FFmpeg convert to WAV    │
+│  3. Whisper STT (bilingual)  │
+│  4. Hallucination filter     │
+│  5. Delimiter wrapping       │
+│  6. Qwen LLM polish         │
+│  7. Return transcript        │
+│                              │
+│  Async: save training pair   │
+│  Async: log latency metrics  │
 └──────────────────────────────┘
 ```
 
-| File | Workflow | Trigger | Purpose |
-|------|----------|---------|---------|
-| `stmna-voice.json` | STMNA_Voice Transcription | Webhook (POST) | Receives audio, transcribes with whisper.cpp, cleans with LLM, stores result |
+| File | Workflow | Nodes | Trigger | Purpose |
+|------|----------|-------|---------|---------|
+| `stmna-voice.json` | STMNA_Voice Transcription | 20 | Webhook (POST) | Receives audio, transcribes, cleans, logs, returns transcript |
+
+---
+
+## Pipeline Details
+
+### Audio Processing
+
+The workflow accepts any audio format ffmpeg can decode (m4a, mp3, wav, ogg, webm). FFmpeg converts the input to 16kHz mono WAV before sending to whisper.cpp.
+
+### Whisper Transcription
+
+Sends audio to a dedicated whisper.cpp server with tuned parameters:
+
+- Response format: `verbose_json` (includes segment-level confidence scores)
+- Bilingual prompt with domain vocabulary (reduces hallucination on mixed FR/EN input)
+- Anti-hallucination settings: `entropy_thold=2.0`, `no_speech_thold=0.8`, `suppress_nst=true`, `temperature=0.0`
+
+### Hallucination Filter
+
+Five detection methods run post-transcription:
+
+1. **Known phantom phrases** — matches against ~25 common whisper hallucination strings
+2. **Non-Latin script detection** — flags unexpected Japanese/Chinese/Arabic/Korean/Cyrillic output
+3. **Segment confidence** — rejects transcripts where all segments have `no_speech_prob > 0.7`
+4. **Repetition dedup** — catches 3+ identical repeated sentences
+5. **Tail segment trimming** — removes trailing segments with known phantom phrases and avg word probability below 0.45
+
+### Delimiter Wrapping
+
+The Process Whisper Response node wraps the raw transcript in delimiters before sending to the LLM. This prevents the LLM from confusing transcript content with its own instructions, which was causing the model to occasionally "respond" to the transcript instead of cleaning it.
+
+### LLM Polish
+
+Qwen3-4B (Instruct, Q4_K_M) runs as a persistent always-on model via llama-swap. It corrects grammar, fixes punctuation, and formats the transcript without changing meaning. Temperature: 0.1, max tokens: 2048.
+
+---
+
+## Performance
+
+Benchmarked over 423 recordings across 7 days (2026-02-25 to 2026-03-04):
+
+| Metric | Value |
+|--------|-------|
+| Average total pipeline | 2,427ms |
+| Median (p50) | 1,801ms |
+| p90 | 4,780ms |
+| p95 | 6,482ms |
+| Whisper avg | 1,196ms (~49% of total) |
+| Qwen avg | 1,231ms (~51% of total) |
+
+By transcript length:
+
+| Size | Count | Avg Total | p50 | p90 |
+|------|-------|-----------|-----|-----|
+| Short (<50 chars) | 45 | 1,029ms | 722ms | 1,303ms |
+| Medium (50-150 chars) | 100 | 1,302ms | 1,072ms | 1,707ms |
+| Long (150-400 chars) | 159 | 1,962ms | 1,813ms | 2,703ms |
+| Very long (400+ chars) | 119 | 4,522ms | 3,846ms | 7,418ms |
+
+Processing time scales linearly with transcript length. The two pipeline stages (Whisper and Qwen) contribute roughly equally to total latency.
 
 ---
 
@@ -34,31 +98,30 @@ Incoming audio file (POST /webhook/voice)
 
 | Service | Required? | Notes |
 |---------|-----------|-------|
-| [whisper.cpp server](https://github.com/ggerganov/whisper.cpp) | Yes | Runs the actual transcription |
-| [llama-swap](https://github.com/mostlygeek/llama-swap) or compatible OpenAI API | Yes | Cleans/formats raw transcripts |
-| PostgreSQL 15+ | Yes | Stores transcription results and metrics |
+| [whisper.cpp server](https://github.com/ggerganov/whisper.cpp) | Yes | Dedicated instance for voice (port 8083), separate from Signal pipeline |
+| [llama-swap](https://github.com/mostlygeek/llama-swap) or compatible OpenAI API | Yes | Runs Qwen3-4B as persistent always-on model |
+| PostgreSQL 15+ | Optional | Stores training pairs and latency metrics for evaluation |
 
 ### n8n Requirements
 
 - n8n **1.75+**
-- Custom n8n image with `ffmpeg` installed (required for audio format handling)
+- Custom n8n image with `ffmpeg` installed (required for audio format conversion)
 - Environment variable: `NODE_FUNCTION_ALLOW_BUILTIN=fs,child_process,path`
-
-See [../config/](../config/) for the custom n8n Dockerfile used with this pipeline.
 
 ### Database
 
-The workflow logs to a PostgreSQL database. Schema:
+The workflow logs to a PostgreSQL database (`stmna_voice`) with two tables:
 
-```bash
-psql -U postgres -d stmna_voice -f ../../sql/voice-schema.sql
-```
+- `voice_training_pairs` — raw transcript vs. LLM-cleaned transcript pairs (for future fine-tuning)
+- `voice_latency_metrics` — per-request timing breakdown (whisper, qwen, total)
+
+These tables are optional. The core transcription path works without PostgreSQL.
 
 ---
 
 ## Import Instructions
 
-1. In n8n, go to **Settings → Import workflow**
+1. In n8n, go to **Settings > Import workflow**
 2. Import `stmna-voice.json`
 3. Reassign credentials after import (see below)
 4. Set your webhook URL and configure the bearer token
@@ -68,60 +131,63 @@ psql -U postgres -d stmna_voice -f ../../sql/voice-schema.sql
 
 ## Required Credentials
 
-Create these credential types in n8n (**Settings → Credentials → Add credential**), then reassign them after import.
-
 ### `Postgres` credential
-Point to your `stmna_voice` database.
+
+Point to your `stmna_voice` database. Used by the async logging branch only.
 
 | Nodes using this credential |
 |-----------------------------|
 | Save Training Pair |
 | Save Latency Metrics |
 
-These nodes are optional — they log transcription pairs and latency for model evaluation. The core transcription path works without them.
+---
+
+## Sending Audio
+
+The workflow expects a `multipart/form-data` POST with a `file` field:
+
+```bash
+curl -X POST https://your-voice-endpoint/v1/audio/transcriptions \
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \
+  -F "file=@recording.m4a"
+```
+
+Supported formats: anything ffmpeg can decode (m4a, mp3, wav, ogg, webm, flac).
+
+The response contains the cleaned transcript:
+
+```json
+{
+  "text": "Your transcribed and cleaned text here."
+}
+```
+
+### Client Implementations
+
+- **Linux:** Push-to-talk shell script using `arecord`, `curl`, and `xdotool` for paste
+- **Android (interim):** Whisper-to-Input APK for on-device recording
+- **Android (planned):** STMNA_Voice Mobile app with direct API integration
 
 ---
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and fill in all values.
-
-The workflow requires these to be set in your n8n environment:
+Copy `.env.example` to `.env` and fill in all values:
 
 ```env
 WHISPER_URL=http://your-whisper:8083
 LLAMA_SWAP_URL=http://your-llama-swap:8081
+VOICE_MODEL=qwen3-4b-voice
 VOICE_BEARER_TOKEN=your-bearer-token
 ```
 
----
-
-## Sending Audio
-
-The workflow expects a `multipart/form-data` POST to the n8n webhook URL:
-
-```bash
-curl -X POST https://your-n8n/webhook/voice \
-  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \
-  -F "audio=@recording.m4a"
-```
-
-Supported formats: anything ffmpeg can decode (m4a, mp3, wav, ogg, webm).
-
-The response contains the cleaned transcript as JSON:
-
-```json
-{
-  "transcript": "...",
-  "duration_ms": 4200,
-  "model": "whisper-large-v3"
-}
-```
+See `.env.example` for the full list.
 
 ---
 
 ## Adapting to Your Setup
 
 - **Different STT backend:** Replace the whisper.cpp HTTP call with any API that accepts audio and returns a transcript string
-- **Different LLM:** Replace `LLAMA_SWAP_URL` with any OpenAI-compatible endpoint and set your model name
-- **No PostgreSQL:** Remove the logging nodes — the core transcription path works without them
+- **Different LLM:** Replace `LLAMA_SWAP_URL` with any OpenAI-compatible endpoint and set your model name. A small model (3-4B parameters) is sufficient for transcript cleanup.
+- **No PostgreSQL:** Remove the logging nodes. The core transcription path works without them.
+- **Dual whisper architecture:** The Voice pipeline uses a dedicated whisper instance (port 8083) separate from the Signal pipeline's instance (port 8084). This prevents concurrent requests from blocking each other. If you only run one pipeline, a single instance works fine.

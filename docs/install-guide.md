@@ -28,25 +28,57 @@ If installing on other infrastructure: see [Running on Other Infrastructure](#ru
 
 ---
 
-## Step 1: Configure n8n Credentials
+## Step 1: Create the Voice Database
+
+The Voice workflow logs training pairs and latency metrics to a dedicated `stmna_voice` database. This database was created during Desk installation (Step 4), but the Voice tables need to be added.
+
+Copy `sql/schema.sql` from the stmna-voice repo to your server, then apply it:
+
+```bash
+podman exec -i postgres-voice psql -U voice -d stmna_voice < schema.sql
+```
+
+**Expected result:** `CREATE EXTENSION`, `CREATE TABLE`, `CREATE INDEX` statements with no errors.
+
+Verify the tables exist:
+
+```bash
+podman exec postgres-voice psql -U voice -d stmna_voice -c "\dt"
+```
+
+**Expected result:**
+
+```
+               List of relations
+ Schema |         Name          | Type  | Owner
+--------+-----------------------+-------+-------
+ public | voice_latency_metrics | table | voice
+ public | voice_training_pairs  | table | voice
+```
+
+> **Note:** These tables are optional. The core transcription pipeline works without PostgreSQL -- only the async logging branch (training pairs and latency metrics) requires it. If you skip this step, the workflow will log errors on the logging nodes but transcription will still work.
+
+---
+
+## Step 2: Configure n8n Credentials
 
 Open n8n at `http://YOUR_IP:5678` and create the following credential:
 
 | Credential Name | Type | Values |
 |----------------|------|--------|
-| Postgres Signal | PostgreSQL | Host: `postgres-voice`, Port: `5432`, Database: `stmna_signal`, User: `voice`, Password: your postgres password |
+| Postgres Voice | PostgreSQL | Host: `postgres-voice`, Port: `5432`, Database: `stmna_voice`, User: `voice`, Password: your postgres password |
 
-> **Note:** If you already configured this credential for the Signal pipeline, you do not need to create it again. The Voice workflow uses the same credential.
+> **Note:** The Voice workflow uses the `stmna_voice` database, not `stmna_signal`. If you also run the Signal pipeline, you will have two separate PostgreSQL credentials.
 
 ---
 
-## Step 2: Import the Voice Workflow
+## Step 3: Import the Voice Workflow
 
 Import `stmna-voice.json` from the `backend/workflows/` directory.
 
 In n8n, go to Workflows > Import from File and select the JSON file.
 
-After importing, **re-link credentials manually**: open each credential node (they will show a red warning), select "Postgres Signal" from the dropdown, and save. Sanitized workflow files contain placeholder credential IDs that do not exist on your instance.
+After importing, **re-link credentials manually**: open each credential node (they will show a red warning), select "Postgres Voice" from the dropdown, and save. Sanitized workflow files contain placeholder credential IDs that do not exist on your instance.
 
 Verify after re-linking:
 - All credential nodes show green (no warnings)
@@ -55,7 +87,7 @@ Verify after re-linking:
 
 ---
 
-## Step 3: Smoke Test
+## Step 4: Smoke Test
 
 ### Test the Whisper endpoint
 

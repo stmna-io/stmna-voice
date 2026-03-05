@@ -44,8 +44,10 @@ Import `stmna-voice.json` from the `backend/workflows/` directory.
 
 In n8n, go to Workflows > Import from File and select the JSON file.
 
-After importing, verify:
-- All credential nodes show the correct credential
+After importing, **re-link credentials manually**: open each credential node (they will show a red warning), select "Postgres Signal" from the dropdown, and save. Sanitized workflow files contain placeholder credential IDs that do not exist on your instance.
+
+Verify after re-linking:
+- All credential nodes show green (no warnings)
 - The Whisper endpoint URL points to your Whisper server (`http://whisper-voice:8083/v1/audio/transcriptions`)
 - The LLM endpoint URL points to your llama-swap instance (`http://llama-swap:8080/v1`)
 

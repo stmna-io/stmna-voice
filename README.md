@@ -46,9 +46,13 @@ stmna-voice/
 ├── backend/          ← Server-side pipeline (n8n workflow + whisper.cpp config)
 │   ├── workflows/    ← Sanitized n8n workflow JSON (import into your n8n instance)
 │   └── config/       ← whisper.cpp server config, llama-swap group config
+├── desktop/          ← Linux push-to-talk client (voice.sh)
+│   └── voice.sh      ← Push-to-talk script — record, transcribe, paste
 ├── mobile/           ← Android app (STMNA Voice Mobile — fork of Echos)
 │   └── ...           ← React Native / Expo source
 ├── docs/
+│   ├── install-guide.md   ← Backend deployment guide
+│   ├── linux-guide.md     ← Linux desktop client setup
 │   ├── backend-setup.md   ← Deploy whisper.cpp + n8n workflow
 │   └── mobile-build.md    ← Build and install Android APK
 ├── LICENSE
@@ -147,6 +151,8 @@ See [mobile/](mobile/) and [docs/mobile-build.md](docs/mobile-build.md).
 
 | Document | Description |
 |----------|-------------|
+| [Install Guide](docs/install-guide.md) | Full backend deployment guide (requires STMNA Desk) |
+| [Linux Guide](docs/linux-guide.md) | Linux desktop client — push-to-talk setup, keyboard shortcut |
 | [Backend Setup](docs/backend-setup.md) | whisper.cpp deployment, n8n workflow import, Caddy auth |
 | [Mobile Build](docs/mobile-build.md) | Build STMNA Voice Mobile APK from source, install, configure |
 

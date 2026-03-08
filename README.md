@@ -35,7 +35,11 @@ Unlike commercial dictation tools:
 
 ### Hardware Requirement
 
-STMNA Voice runs on [STMNA Desk](https://github.com/stmna-io/stmna-desk) — AMD Strix Halo + 128GB unified memory. The backend (whisper.cpp + Qwen LLM) runs on the Desk. Clients are thin: your phone or laptop just records audio and sends it.
+Designed for and tested on [STMNA Desk](https://github.com/stmna-io/stmna-desk) (AMD Ryzen AI Max+ 395, 128GB unified memory). Can be adapted to any Linux system with whisper.cpp and an OpenAI-compatible LLM endpoint. The backend (whisper.cpp + Qwen LLM) runs on the server. Clients are thin: your phone or laptop just records audio and sends it.
+
+### Network Requirements
+
+STMNA Voice accepts API calls from mobile devices, which requires an HTTPS endpoint reachable from the internet. If your server is behind a home network or firewall, you'll need a tunnel or reverse proxy. See [STMNA Desk: Remote Access](https://github.com/stmna-io/stmna-desk/blob/main/docs/remote-access.md) for options.
 
 ---
 

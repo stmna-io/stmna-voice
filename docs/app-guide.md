@@ -20,7 +20,7 @@ The app is distributed as an APK file. Three options:
 
 | Method | Where |
 |--------|-------|
-| Sideload | Download `app-release.apk` from the [mobile/ directory](../mobile/app-release.apk) or [releases page](https://f.slowdawn.cc/stmna-io/stmna-voice/releases) |
+| Sideload | Download `app-release.apk` from the [mobile/ directory](../mobile/app-release.apk) or [releases page](https://github.com/stmna-io/stmna-voice/releases) |
 | Google Play Store | Coming soon |
 | Accrescent | Coming soon |
 
@@ -159,4 +159,4 @@ For offline voice input, install [FUTO Voice Input](https://voiceinput.futo.org/
 ## What's next
 
 - [Voice install guide](install-guide.md) -- set up the server-side pipeline
-- [Desk install guide](https://f.slowdawn.cc/stmna-io/stmna-desk/src/branch/main/docs/install-guide.md) -- full infrastructure setup
+- [Desk install guide](https://github.com/stmna-io/stmna-desk/blob/main/docs/install-guide.md) -- full infrastructure setup

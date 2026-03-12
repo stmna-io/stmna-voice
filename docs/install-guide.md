@@ -10,13 +10,13 @@ updated: 2026-03-05
 
 > By the end of this guide, you will have the STMNA Voice transcription pipeline running: record audio on your phone or Linux desktop, get back a structured transcription processed by a local LLM.
 >
-> Tested on Ubuntu 24.04 LTS, deployed via Dockge on a staging VM (10.0.10.55) during SB-06.
+> Tested on Ubuntu 24.04 LTS, deployed via Dockge on a staging VM.
 
 ## Prerequisites
 
 | Requirement | Where to get it |
 |-------------|----------------|
-| STMNA Desk, Core + Automation tiers (Steps 1-8) | [Desk install guide](https://f.slowdawn.cc/stmna-io/stmna-desk/src/branch/main/docs/install-guide.md) |
+| STMNA Desk, Core + Automation tiers (Steps 1-8) | [Desk install guide](https://github.com/stmna-io/stmna-desk/blob/main/docs/install-guide.md) |
 | Whisper server running | Desk install guide, Step 8 |
 | n8n running with custom image | Desk install guide, Step 7 |
 | llama-swap running with at least one LLM | Desk install guide, Step 5 |
@@ -159,5 +159,5 @@ This path is community-supported. The STMNA team validates against Desk only.
 
 - [Linux guide](linux-guide.md) -- install and configure the Linux desktop client
 - [App guide](app-guide.md) -- install and configure the Android app
-- [Desk install guide](https://f.slowdawn.cc/stmna-io/stmna-desk/src/branch/main/docs/install-guide.md) -- full infrastructure setup
-- [Signal install guide](https://f.slowdawn.cc/stmna-io/stmna-signal/src/branch/main/docs/install-guide.md) -- add the Signal content pipeline
+- [Desk install guide](https://github.com/stmna-io/stmna-desk/blob/main/docs/install-guide.md) -- full infrastructure setup
+- [Signal install guide](https://github.com/stmna-io/stmna-signal/blob/main/docs/install-guide.md) -- add the Signal content pipeline

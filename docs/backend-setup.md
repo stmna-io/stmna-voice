@@ -1,6 +1,6 @@
 # Backend Setup Guide
 
-<!-- TODO: Write full backend setup guide for SB-09 session -->
+<!-- TODO: Write full backend setup guide -->
 <!-- Content: whisper.cpp container deployment (rootless Podman), llama-swap persistent group
      config for Qwen3-4B Voice, n8n workflow import steps, PostgreSQL schema setup,
      Caddy bearer token auth config, voice.sh script deployment + keybinding,
@@ -30,8 +30,8 @@ This document will cover:
 
 ### PostgreSQL Schema
 
-- `voice_training_pairs` — raw/polished transcription pairs
-- `voice_latency_metrics` — per-request timing data
+- `voice_training_pairs`  -- raw/polished transcription pairs
+- `voice_latency_metrics`  -- per-request timing data
 - Schema SQL in `backend/config/schema.sql`
 
 ### Caddy Configuration
@@ -56,4 +56,4 @@ curl -X POST https://stv.yourdomain.com/v1/audio/transcriptions \
   -F "response_format=json"
 ```
 
-Coming in SB-09 session.
+Coming soon.

@@ -18,7 +18,7 @@
 
 ---
 
-<!-- TODO: Hero GIF — mobile push-to-talk → text appears at cursor on desktop (scrcpy recording) -->
+<!-- TODO: Hero GIF  -- mobile push-to-talk → text appears at cursor on desktop (scrcpy recording) -->
 
 ---
 
@@ -28,10 +28,10 @@ STMNA Voice is a **self-hosted speech-to-text pipeline** that runs entirely on y
 
 Unlike commercial dictation tools:
 
-- **No cloud** — audio never touches a third-party server
-- **Self-improving** — every transcription builds a personal training dataset that improves accuracy over time
-- **Cross-platform** — same backend serves Linux desktop (voice.sh) and Android (STMNA Voice Mobile)
-- **Open format** — training data is yours forever, not locked in any vendor's proprietary format
+- **No cloud**  -- audio never touches a third-party server
+- **Self-improving**  -- every transcription builds a personal training dataset that improves accuracy over time
+- **Cross-platform**  -- same backend serves Linux desktop (voice.sh) and Android (STMNA Voice Mobile)
+- **Open format**  -- training data is yours forever, not locked in any vendor's proprietary format
 
 ### Hardware Requirement
 
@@ -51,8 +51,8 @@ stmna-voice/
 │   ├── workflows/    ← Sanitized n8n workflow JSON (import into your n8n instance)
 │   └── config/       ← whisper.cpp server config, llama-swap group config
 ├── desktop/          ← Linux push-to-talk client (voice.sh)
-│   └── voice.sh      ← Push-to-talk script — record, transcribe, paste
-├── mobile/           ← Android keyboard app (Kotlin/Compose — fork of Whisper-to-Input)
+│   └── voice.sh      ← Push-to-talk script  -- record, transcribe, paste
+├── mobile/           ← Android keyboard app (Kotlin/Compose  -- fork of Whisper-to-Input)
 │   └── ...           ← Android Studio project source
 ├── docs/
 │   ├── install-guide.md   ← Backend deployment guide
@@ -156,7 +156,7 @@ See [mobile/](mobile/) and [docs/mobile-build.md](docs/mobile-build.md).
 | Document | Description |
 |----------|-------------|
 | [Install Guide](docs/install-guide.md) | Full backend deployment guide (requires STMNA Desk) |
-| [Linux Guide](docs/linux-guide.md) | Linux desktop client — push-to-talk setup, keyboard shortcut |
+| [Linux Guide](docs/linux-guide.md) | Linux desktop client  -- push-to-talk setup, keyboard shortcut |
 | [Backend Setup](docs/backend-setup.md) | whisper.cpp deployment, n8n workflow import, Caddy auth |
 | [Mobile Build](docs/mobile-build.md) | Build STMNA Voice Mobile APK from source, install, configure |
 
@@ -167,12 +167,12 @@ See [mobile/](mobile/) and [docs/mobile-build.md](docs/mobile-build.md).
 STMNA Voice Mobile is an Android keyboard app forked from [Whisper-to-Input](https://github.com/j3soon/whisper-to-input) (GPLv3 license).
 
 **What it does differently:**
-- Registers as an Android IME (keyboard) — speak and text appears at your cursor in any app
+- Registers as an Android IME (keyboard)  -- speak and text appears at your cursor in any app
 - Connects to your STMNA Desk backend for server-side transcription
 - STMNA branding and keyboard design
 - No bundled offline model (use [FUTO Voice Input](https://voiceinput.futo.org/) as fallback)
 
-**Status:** Phase 3 — functional, APK available. See [mobile/](mobile/) for source and [docs/app-guide.md](docs/app-guide.md) for setup.
+**Status:** Phase 3  -- functional, APK available. See [mobile/](mobile/) for source and [docs/app-guide.md](docs/app-guide.md) for setup.
 
 ---
 
@@ -183,7 +183,7 @@ Every transcription generates a training pair: `(raw Whisper output, Qwen-polish
 - Whisper learns your accent, vocabulary, and speech patterns
 - Qwen correction rate drops as Whisper improves
 - Eventually, Qwen can be skipped entirely for most requests
-- Your training data is open-format — fine-tune any Whisper variant, forever
+- Your training data is open-format  -- fine-tune any Whisper variant, forever
 
 This dataset is your most valuable long-term asset from running STMNA Voice.
 
@@ -203,7 +203,7 @@ Areas where contributions are welcome:
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE)
+Apache 2.0  -- see [LICENSE](LICENSE)
 
 The mobile app ([mobile/](mobile/)) is based on [Whisper-to-Input](https://github.com/j3soon/whisper-to-input) (GPLv3 license). See [mobile/LICENSE](mobile/LICENSE) for details.
 

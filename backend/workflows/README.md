@@ -1,4 +1,4 @@
-# STMNA Voice — Workflow Reference
+# STMNA Voice  -- Workflow Reference
 
 This directory contains the n8n workflow for the STMNA Voice transcription pipeline. It takes audio input via HTTP POST, transcribes it with whisper.cpp, cleans the transcript with a small LLM, and returns the result. The whole round-trip averages 2.4 seconds.
 
@@ -50,11 +50,11 @@ Sends audio to a dedicated whisper.cpp server with tuned parameters:
 
 Five detection methods run post-transcription:
 
-1. **Known phantom phrases** — matches against ~25 common whisper hallucination strings
-2. **Non-Latin script detection** — flags unexpected Japanese/Chinese/Arabic/Korean/Cyrillic output
-3. **Segment confidence** — rejects transcripts where all segments have `no_speech_prob > 0.7`
-4. **Repetition dedup** — catches 3+ identical repeated sentences
-5. **Tail segment trimming** — removes trailing segments with known phantom phrases and avg word probability below 0.45
+1. **Known phantom phrases**  -- matches against ~25 common whisper hallucination strings
+2. **Non-Latin script detection**  -- flags unexpected Japanese/Chinese/Arabic/Korean/Cyrillic output
+3. **Segment confidence**  -- rejects transcripts where all segments have `no_speech_prob > 0.7`
+4. **Repetition dedup**  -- catches 3+ identical repeated sentences
+5. **Tail segment trimming**  -- removes trailing segments with known phantom phrases and avg word probability below 0.45
 
 ### Delimiter Wrapping
 
@@ -112,8 +112,8 @@ Processing time scales linearly with transcript length. The two pipeline stages 
 
 The workflow logs to a PostgreSQL database (`stmna_voice`) with two tables:
 
-- `voice_training_pairs` — raw transcript vs. LLM-cleaned transcript pairs (for future fine-tuning)
-- `voice_latency_metrics` — per-request timing breakdown (whisper, qwen, total)
+- `voice_training_pairs`  -- raw transcript vs. LLM-cleaned transcript pairs (for future fine-tuning)
+- `voice_latency_metrics`  -- per-request timing breakdown (whisper, qwen, total)
 
 These tables are optional. The core transcription path works without PostgreSQL.
 

@@ -1,10 +1,10 @@
 ---
-title: "STMNA Voice — Linux Client Guide"
+title: "STMNA Voice  -- Linux Client Guide"
 repo: stmna-voice
 updated: 2026-03-05
 ---
 
-# STMNA Voice — Linux Client Guide
+# STMNA Voice  -- Linux Client Guide
 
 > Push-to-talk transcription for Linux desktops. Press a key to record, press again to transcribe and paste at your cursor.
 
@@ -93,9 +93,9 @@ bindsym $mod+v exec ~/bin/voice.sh
 
 ### 4. Test
 
-Press your shortcut once — you should see a "Recording..." notification.
+Press your shortcut once  -- you should see a "Recording..." notification.
 
-Press again — you should see "Transcribing..." followed by the transcribed text pasted at your cursor.
+Press again  -- you should see "Transcribing..." followed by the transcribed text pasted at your cursor.
 
 ---
 

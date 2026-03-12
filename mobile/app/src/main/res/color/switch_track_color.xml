@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SwitchCompat track: semi-transparent Ember Orange when checked, Slate Mid when unchecked -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="#80FF8C42" android:state_checked="true" />
+    <item android:color="@color/bg_surface" />
+</selector>

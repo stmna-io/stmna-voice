@@ -20,7 +20,7 @@ The app is distributed as an APK file. Three options:
 
 | Method | Where |
 |--------|-------|
-| Sideload | Download `app-release.apk` from the [releases page](https://f.slowdawn.cc/STMNA/stmna-voice-android/releases) |
+| Sideload | Download `app-release.apk` from the [mobile/ directory](../mobile/app-release.apk) or [releases page](https://f.slowdawn.cc/stmna-io/stmna-voice/releases) |
 | Google Play Store | Coming soon |
 | Accrescent | Coming soon |
 

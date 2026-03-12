@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  STMNA adaptive icon monochrome layer for Android 13+ themed icons.
+  Same inset as foreground to keep the V within the safe zone.
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="10dp"
+    android:insetTop="10dp"
+    android:insetRight="10dp"
+    android:insetBottom="10dp">
+    <bitmap
+        android:src="@drawable/ic_stmna_foreground_source"
+        android:gravity="fill" />
+</inset>

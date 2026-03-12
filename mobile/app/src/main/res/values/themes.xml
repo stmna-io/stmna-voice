@@ -1,0 +1,97 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme — STMNA dark-first -->
+    <style name="Base.Theme.WhisperToInput" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/accent_primary</item>
+        <item name="colorOnPrimary">@color/bg_primary</item>
+        <item name="colorSecondary">@color/accent_secondary</item>
+        <item name="android:colorBackground">@color/bg_primary</item>
+        <item name="android:windowBackground">@color/bg_primary</item>
+        <item name="android:statusBarColor">@color/bg_primary</item>
+        <item name="android:navigationBarColor">@color/bg_primary</item>
+        <!-- Cursor, selection handles, and active controls → Ember Orange -->
+        <item name="colorAccent">@color/accent_primary</item>
+        <item name="colorControlActivated">@color/accent_primary</item>
+        <item name="colorControlNormal">@color/bg_surface</item>
+        <!-- Spinner dropdown styling -->
+        <item name="android:popupBackground">@color/bg_secondary</item>
+        <item name="android:spinnerItemStyle">@style/SpinnerItemStyle</item>
+        <item name="android:spinnerDropDownItemStyle">@style/SpinnerDropDownItemStyle</item>
+    </style>
+
+    <!-- Keyboard element styles -->
+    <style name="RegularImage">
+        <item name="android:tint">@color/text_secondary</item>
+    </style>
+
+    <style name="RegularText">
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+
+    <style name="Background">
+        <item name="android:background">@color/bg_primary</item>
+    </style>
+
+    <style name="TopBar">
+        <item name="android:background">@color/accent_primary</item>
+    </style>
+
+    <!-- Settings Page Styles -->
+    <!-- Label for all settings items (Ice White, bold) -->
+    <style name="SettingsLabel">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+    <style name="SettingsDescription">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/text_muted</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+    <style name="SettingsField">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">4dp</item>
+        <item name="android:layout_marginBottom">8dp</item>
+        <item name="android:inputType">textMultiLine</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textColorHint">@color/text_muted</item>
+        <item name="android:background">@drawable/bg_text_field</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+    <style name="SettingsSpinner">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginBottom">16dp</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+
+    <!-- Section header style (e.g. SERVER, AUDIO, BEHAVIOR) -->
+    <style name="SectionHeader">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/text_muted</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:letterSpacing">0.15</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- Spinner item (selected value shown in the spinner) -->
+    <style name="SpinnerItemStyle" parent="Widget.AppCompat.TextView.SpinnerItem">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+
+    <!-- Spinner dropdown item (popup list) -->
+    <style name="SpinnerDropDownItemStyle" parent="Widget.AppCompat.TextView.SpinnerItem">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:background">@color/bg_secondary</item>
+        <item name="android:padding">12dp</item>
+    </style>
+
+    <style name="Theme.WhisperToInput" parent="Base.Theme.WhisperToInput" />
+</resources>

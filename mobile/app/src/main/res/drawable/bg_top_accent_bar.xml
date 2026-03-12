@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Top accent bar: gradient from Solar Gold → Ember Orange → Burnt Vermillion -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:startColor="@color/accent_secondary"
+        android:centerColor="@color/accent_primary"
+        android:endColor="@color/error"
+        android:angle="270" />
+</shape>

@@ -1,0 +1,15 @@
+# Android build artifacts
+mobile/.gradle/
+mobile/.idea/
+mobile/.kotlin/
+mobile/build/
+mobile/app/build/
+mobile/local.properties
+mobile/*.aab
+
+# Keep APK for sideloading distribution
+# (override mobile/.gitignore's *.apk exclusion)
+!mobile/app-release.apk
+
+# OS
+.DS_Store

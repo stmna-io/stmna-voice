@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    STMNA Voice keyboard layout — matches pencil-new.pen design.
+
+    Layout structure:
+    - Top accent gradient bar (3dp)
+    - Header row: IME switch | Brand text / Status | Settings
+    - Mic area (FrameLayout): cancel (left) + mic button (center) + backspace (right)
+    - Bottom row: spacebar (center) + enter (right)
+
+    Original Whisper To Input code: Copyright (c) 2023-2025 Yan-Bin Diau, Johnson Sun (GPLv3)
+    STMNA Voice redesign: Copyright (c) 2026 STMNA (GPLv3)
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/keyboard_view"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/bg_primary"
+    android:layout_alignParentBottom="true"
+    android:layout_gravity="bottom"
+    android:paddingBottom="8dp">
+
+    <!-- Top accent gradient bar -->
+    <View
+        android:id="@+id/view_top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:background="@drawable/bg_top_accent_bar" />
+
+    <!-- Header row: IME switch | Brand/Status | Settings -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <!-- IME switch (keyboard icon) -->
+        <ImageButton
+            android:id="@+id/btn_previous_ime"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="@string/btn_previous_ime_hint"
+            android:scaleType="centerInside"
+            android:padding="6dp"
+            android:src="@drawable/ic_keyboard"
+            android:tint="@color/text_secondary" />
+
+        <!-- Brand / Status text (centered, fills remaining space) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <!-- Brand text (visible in idle state) -->
+            <TextView
+                android:id="@+id/label_brand_stmna"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="STMNA"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.07" />
+            <TextView
+                android:id="@+id/label_brand_underscore"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="_"
+                android:textColor="@color/accent_primary"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.07" />
+            <TextView
+                android:id="@+id/label_brand_voice"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Voice"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.07" />
+
+            <!-- Status text (visible in recording/transcribing states) -->
+            <TextView
+                android:id="@+id/label_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.03"
+                android:visibility="gone" />
+            <TextView
+                android:id="@+id/label_status_dots"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="..."
+                android:textColor="@color/accent_primary"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.03"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Settings button -->
+        <ImageButton
+            android:id="@+id/btn_settings"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="@string/btn_settings_hint"
+            android:scaleType="centerInside"
+            android:padding="7dp"
+            android:src="@drawable/btn_settings"
+            android:tint="@color/text_secondary" />
+    </LinearLayout>
+
+    <!-- Mic area: cancel (left) + mic (center) + backspace (right) -->
+    <FrameLayout
+        android:id="@+id/btn_mic_frame"
+        android:layout_width="match_parent"
+        android:layout_height="160dp">
+
+        <!-- Glow ring (behind mic button, centered, hidden by default) -->
+        <View
+            android:id="@+id/glow_ring"
+            android:layout_width="108dp"
+            android:layout_height="108dp"
+            android:layout_gravity="center"
+            android:background="@drawable/bg_glow_ring_recording"
+            android:alpha="0.6"
+            android:visibility="invisible" />
+
+        <!-- Mic button (centered) -->
+        <ImageButton
+            android:id="@+id/btn_mic"
+            android:layout_width="88dp"
+            android:layout_height="88dp"
+            android:layout_gravity="center"
+            android:background="@drawable/bg_mic_button_idle"
+            android:contentDescription="@string/start_speech_to_text"
+            android:scaleType="centerInside"
+            android:padding="22dp"
+            android:src="@drawable/mic_idle"
+            android:tint="@color/bg_primary" />
+
+        <!-- Waiting spinner (centered, hidden by default) -->
+        <ProgressBar
+            android:id="@+id/pb_waiting_icon"
+            style="?android:attr/progressBarStyle"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_gravity="center"
+            android:visibility="invisible"
+            android:indeterminateTint="@color/accent_secondary" />
+
+        <!-- Cancel button (left of center) -->
+        <ImageButton
+            android:id="@+id/btn_cancel"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="center_vertical"
+            android:layout_marginStart="60dp"
+            android:background="@drawable/bg_cancel_button"
+            android:contentDescription="@string/desc_cancel"
+            android:scaleType="centerInside"
+            android:padding="10dp"
+            android:src="@drawable/btn_cancel"
+            android:tint="@color/text_secondary"
+            android:visibility="invisible" />
+
+        <!-- Retry button (same position as cancel, shown on error) -->
+        <ImageButton
+            android:id="@+id/btn_retry"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="center_vertical"
+            android:layout_marginStart="60dp"
+            android:background="@drawable/bg_cancel_button"
+            android:scaleType="centerInside"
+            android:padding="10dp"
+            android:src="@drawable/btn_retry"
+            android:tint="@color/text_secondary"
+            android:visibility="invisible" />
+
+        <!-- Backspace button (right of mic, same row) -->
+        <com.example.whispertoinput.keyboard.BackspaceButton
+            android:id="@+id/btn_backspace"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_gravity="center_vertical|end"
+            android:layout_marginEnd="56dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="@string/backspace_button_hint"
+            android:scaleType="centerInside"
+            android:padding="10dp"
+            android:src="@drawable/btn_backspace"
+            android:tint="@color/text_secondary" />
+
+        <!-- Ripple animation views (kept for amplitude visualization) -->
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:id="@+id/mic_ripples"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="invisible">
+
+            <ImageView
+                android:id="@+id/mic_ripple_0"
+                android:layout_width="107dp"
+                android:layout_height="107dp"
+                android:alpha="0"
+                android:src="@drawable/mic_ripple_0"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+
+            <ImageView
+                android:id="@+id/mic_ripple_1"
+                android:layout_width="115dp"
+                android:layout_height="115dp"
+                android:alpha="0"
+                android:src="@drawable/mic_ripple_1"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+
+            <ImageView
+                android:id="@+id/mic_ripple_2"
+                android:layout_width="123dp"
+                android:layout_height="123dp"
+                android:alpha="0"
+                android:src="@drawable/mic_ripple_2"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+
+            <ImageView
+                android:id="@+id/mic_ripple_3"
+                android:layout_width="131dp"
+                android:layout_height="131dp"
+                android:alpha="0"
+                android:src="@drawable/mic_ripple_3"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </FrameLayout>
+
+    <!-- Bottom row: spacebar (center) + enter (right, aligned with backspace above) -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp">
+
+        <!-- Spacebar (fixed width, centered) -->
+        <TextView
+            android:id="@+id/btn_space_bar"
+            android:layout_width="160dp"
+            android:layout_height="36dp"
+            android:layout_gravity="center"
+            android:background="@drawable/bg_spacebar"
+            android:gravity="center"
+            android:text="@string/space_bar_label"
+            android:textColor="@color/text_muted"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <!-- Enter button (right-aligned, same axis as backspace above) -->
+        <ImageButton
+            android:id="@+id/btn_enter"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_gravity="center_vertical|end"
+            android:layout_marginEnd="56dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="@string/start_transcribing"
+            android:scaleType="centerInside"
+            android:padding="10dp"
+            android:src="@drawable/btn_enter"
+            android:tint="@color/text_secondary" />
+    </FrameLayout>
+
+</LinearLayout>

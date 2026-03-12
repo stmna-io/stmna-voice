@@ -52,8 +52,8 @@ stmna-voice/
 │   └── config/       ← whisper.cpp server config, llama-swap group config
 ├── desktop/          ← Linux push-to-talk client (voice.sh)
 │   └── voice.sh      ← Push-to-talk script — record, transcribe, paste
-├── mobile/           ← Android app (STMNA Voice Mobile — fork of Echos)
-│   └── ...           ← React Native / Expo source
+├── mobile/           ← Android keyboard app (Kotlin/Compose — fork of Whisper-to-Input)
+│   └── ...           ← Android Studio project source
 ├── docs/
 │   ├── install-guide.md   ← Backend deployment guide
 │   ├── linux-guide.md     ← Linux desktop client setup
@@ -164,14 +164,15 @@ See [mobile/](mobile/) and [docs/mobile-build.md](docs/mobile-build.md).
 
 ## Mobile App
 
-STMNA Voice Mobile is an Android app forked from [Echos by A1 Lab](https://github.com/jan3dev/a1echos) (MIT license).
+STMNA Voice Mobile is an Android keyboard app forked from [Whisper-to-Input](https://github.com/j3soon/whisper-to-input) (GPLv3 license).
 
 **What it does differently:**
-- Default mode: thin client — sends audio to your STMNA Desk backend
-- Bundled Whisper small model as offline fallback
-- STMNA branding and settings UI
+- Registers as an Android IME (keyboard) — speak and text appears at your cursor in any app
+- Connects to your STMNA Desk backend for server-side transcription
+- STMNA branding and keyboard design
+- No bundled offline model (use [FUTO Voice Input](https://voiceinput.futo.org/) as fallback)
 
-**Status:** Phase 3 — in development. See [mobile/](mobile/) for source.
+**Status:** Phase 3 — functional, APK available. See [mobile/](mobile/) for source and [docs/app-guide.md](docs/app-guide.md) for setup.
 
 ---
 
@@ -193,7 +194,7 @@ This dataset is your most valuable long-term asset from running STMNA Voice.
 See the [stmna-desk](https://github.com/stmna-io/stmna-desk) repo for hardware prerequisites.
 
 Areas where contributions are welcome:
-- 📱 React Native / Expo improvements to the mobile app
+- 📱 Kotlin/Compose improvements to the mobile keyboard app
 - 🎤 Whisper prompt tuning for different languages and accents
 - 📊 Benchmark data on non-Strix-Halo AMD hardware
 - 📝 Documentation improvements
@@ -204,7 +205,7 @@ Areas where contributions are welcome:
 
 Apache 2.0 — see [LICENSE](LICENSE)
 
-The mobile app ([mobile/](mobile/)) is based on [Echos](https://github.com/jan3dev/a1echos) (MIT license). See [mobile/LICENSE](mobile/LICENSE) for details.
+The mobile app ([mobile/](mobile/)) is based on [Whisper-to-Input](https://github.com/j3soon/whisper-to-input) (GPLv3 license). See [mobile/LICENSE](mobile/LICENSE) for details.
 
 ---
 

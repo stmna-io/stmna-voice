@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    STMNA Voice Settings screen — matches pencil-new.pen design.
+    Dark theme with section cards, STMNA brand colors.
+
+    Original: Copyright (c) 2023-2025 Yan-Bin Diau, Johnson Sun (GPLv3)
+    STMNA redesign: Copyright (c) 2026 STMNA (GPLv3)
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true"
+    android:background="@color/bg_primary"
+    tools:context=".MainActivity">
+
+    <!-- Top accent gradient bar -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:background="@drawable/bg_top_accent_bar" />
+
+    <!-- Settings Header: Brand + Apply button -->
+    <LinearLayout
+        android:id="@+id/settings_top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp">
+
+        <!-- Brand text -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="horizontal">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="STMNA"
+                android:textColor="@color/text_primary"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="_"
+                android:textColor="@color/accent_primary"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Voice"
+                android:textColor="@color/text_primary"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Apply button -->
+        <Button
+            android:id="@+id/btn_settings_apply"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:text="@string/settings_btn_apply"
+            android:textColor="@color/bg_primary"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:backgroundTint="@color/accent_primary"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="0dp"
+            android:paddingBottom="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp" />
+    </LinearLayout>
+
+    <!-- Scrollable settings content -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:id="@+id/settings_list"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp"
+            android:paddingBottom="64dp">
+
+            <!-- ═══ SERVER SECTION ═══ -->
+            <TextView style="@style/SectionHeader" android:text="SERVER" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@color/bg_secondary"
+                android:padding="16dp"
+                android:layout_marginTop="14dp"
+                android:layout_marginBottom="28dp">
+
+                <!-- Backend -->
+                <TextView style="@style/SettingsLabel" android:text="Backend" />
+                <TextView style="@style/SettingsDescription" android:text="@string/settings_speech_to_text_backend_desc" />
+                <Spinner
+                    android:id="@+id/spinner_speech_to_text_backend"
+                    style="@style/SettingsSpinner"
+                    android:entries="@array/settings_speech_to_text_backend_array" />
+
+                <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/bg_surface" android:layout_marginTop="8dp" android:layout_marginBottom="8dp" />
+
+                <!-- Endpoint -->
+                <TextView style="@style/SettingsLabel" android:text="@string/settings_endpoint" />
+                <TextView style="@style/SettingsDescription" android:text="@string/settings_endpoint_desc" />
+                <EditText
+                    android:id="@+id/field_endpoint"
+                    style="@style/SettingsField"
+                    android:hint="@string/settings_endpoint_hint" />
+
+                <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/bg_surface" android:layout_marginTop="8dp" android:layout_marginBottom="8dp" />
+
+                <!-- API Key -->
+                <TextView style="@style/SettingsLabel" android:text="@string/settings_api_key" />
+                <TextView style="@style/SettingsDescription" android:text="@string/settings_api_key_desc" />
+                <EditText
+                    android:id="@+id/field_api_key"
+                    style="@style/SettingsField"
+                    android:hint="@string/settings_api_key_hint" />
+
+                <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/bg_surface" android:layout_marginTop="8dp" android:layout_marginBottom="8dp" />
+
+                <!-- Model -->
+                <TextView style="@style/SettingsLabel" android:text="@string/settings_model" />
+                <TextView style="@style/SettingsDescription" android:text="@string/settings_model_desc" />
+                <EditText
+                    android:id="@+id/field_model"
+                    style="@style/SettingsField"
+                    android:hint="@string/settings_model_hint" />
+            </LinearLayout>
+
+            <!-- ═══ AUDIO SECTION ═══ -->
+            <TextView style="@style/SectionHeader" android:text="AUDIO" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@color/bg_secondary"
+                android:padding="16dp"
+                android:layout_marginTop="14dp"
+                android:layout_marginBottom="28dp">
+
+                <!-- Language -->
+                <TextView style="@style/SettingsLabel" android:text="@string/settings_language_code" />
+                <EditText
+                    android:id="@+id/field_language_code"
+                    style="@style/SettingsField"
+                    android:hint="@string/settings_language_code_hint" />
+
+                <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/bg_surface" android:layout_marginTop="8dp" android:layout_marginBottom="8dp" />
+
+                <!-- Postprocessing -->
+                <TextView style="@style/SettingsLabel" android:text="@string/settings_postprocessing" />
+                <Spinner
+                    android:id="@+id/spinner_postprocessing"
+                    style="@style/SettingsSpinner"
+                    android:entries="@array/settings_postprocessing_array" />
+            </LinearLayout>
+
+            <!-- ═══ BEHAVIOR SECTION ═══ -->
+            <TextView style="@style/SectionHeader" android:text="BEHAVIOR" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@color/bg_secondary"
+                android:padding="16dp"
+                android:layout_marginTop="14dp"
+                android:layout_marginBottom="28dp">
+
+                <!-- Auto-start recording -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView style="@style/SettingsLabel" android:text="@string/settings_auto_recording_start" />
+                        <TextView style="@style/SettingsDescription" android:text="@string/settings_auto_recording_start_desc" />
+                    </LinearLayout>
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/switch_auto_recording_start"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        app:thumbTint="@color/switch_thumb_color"
+                        app:trackTint="@color/switch_track_color" />
+                </LinearLayout>
+
+                <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/bg_surface" android:layout_marginTop="8dp" android:layout_marginBottom="8dp" />
+
+                <!-- Auto switch-back -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView style="@style/SettingsLabel" android:text="@string/settings_auto_switch_back" />
+                        <TextView style="@style/SettingsDescription" android:text="@string/settings_auto_switch_back_desc" />
+                    </LinearLayout>
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/switch_auto_switch_back"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        app:thumbTint="@color/switch_thumb_color"
+                        app:trackTint="@color/switch_track_color" />
+                </LinearLayout>
+
+                <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/bg_surface" android:layout_marginTop="8dp" android:layout_marginBottom="8dp" />
+
+                <!-- Add trailing space -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView style="@style/SettingsLabel" android:text="@string/settings_add_trailing_space" />
+                        <TextView style="@style/SettingsDescription" android:text="@string/settings_add_trailing_space_desc" />
+                    </LinearLayout>
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/switch_add_trailing_space"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        app:thumbTint="@color/switch_thumb_color"
+                        app:trackTint="@color/switch_track_color" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- ═══ APPEARANCE SECTION ═══ -->
+            <TextView style="@style/SectionHeader" android:text="APPEARANCE" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@color/bg_secondary"
+                android:padding="16dp"
+                android:layout_marginTop="14dp"
+                android:layout_marginBottom="28dp">
+
+                <!-- Alternative theme toggle -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView style="@style/SettingsLabel" android:text="Alternative theme" />
+                        <TextView style="@style/SettingsDescription" android:text="Dark theme with gray accents" />
+                    </LinearLayout>
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/switch_alt_theme"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        app:thumbTint="@color/switch_thumb_color"
+                        app:trackTint="@color/switch_track_color" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- ═══ ABOUT SECTION ═══ -->
+            <TextView style="@style/SectionHeader" android:text="ABOUT" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@color/bg_secondary"
+                android:padding="20dp"
+                android:gravity="center_horizontal"
+                android:layout_marginTop="14dp">
+
+                <!-- Brand -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="STMNA" android:textColor="@color/text_primary" android:textSize="22sp" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="_" android:textColor="@color/accent_primary" android:textSize="22sp" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="Voice" android:textColor="@color/text_primary" android:textSize="22sp" android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="v1.0.0"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:fontFamily="monospace"
+                    android:layout_marginTop="4dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Your voice, your server, your data. Forever."
+                    android:textColor="@color/text_muted"
+                    android:textSize="12sp"
+                    android:textStyle="italic"
+                    android:gravity="center"
+                    android:layout_marginTop="8dp" />
+
+                <View
+                    android:layout_width="80dp"
+                    android:layout_height="1dp"
+                    android:background="@color/bg_surface"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="12dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="GPLv3 Licensed"
+                    android:textColor="@color/text_muted"
+                    android:textSize="10sp"
+                    android:fontFamily="monospace" />
+
+                <!-- Social links -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginTop="16dp">
+
+                    <!-- Website link -->
+                    <TextView
+                        android:id="@+id/link_website"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="stmna.io"
+                        android:textColor="@color/accent_primary"
+                        android:textSize="11sp"
+                        android:fontFamily="monospace"
+                        android:drawableStart="@drawable/ic_globe"
+                        android:drawablePadding="6dp"
+                        android:gravity="center_vertical"
+                        android:clickable="true"
+                        android:focusable="true" />
+
+                    <View
+                        android:layout_width="20dp"
+                        android:layout_height="0dp" />
+
+                    <!-- X/Twitter link -->
+                    <TextView
+                        android:id="@+id/link_x"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="𝕏  @STMNA_"
+                        android:textColor="@color/accent_primary"
+                        android:textSize="11sp"
+                        android:fontFamily="monospace"
+                        android:clickable="true"
+                        android:focusable="true" />
+                </LinearLayout>
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>

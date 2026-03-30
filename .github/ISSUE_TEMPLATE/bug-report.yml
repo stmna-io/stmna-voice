@@ -1,0 +1,86 @@
+name: Bug Report
+description: Report a bug in the STMNA_Voice pipeline
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug and what you expected to happen.
+      placeholder: "e.g. Pipeline returns empty transcript for audio files longer than 30 seconds"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: client
+    attributes:
+      label: Client type
+      description: Which client were you using?
+      options:
+        - voice.sh (Linux desktop)
+        - STMNA_Voice Mobile (Android)
+        - curl / direct API
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: audio-format
+    attributes:
+      label: Audio format
+      description: What format was the input audio?
+      options:
+        - WAV (16kHz mono)
+        - M4A (Android default)
+        - OGG
+        - MP3
+        - Other
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to trigger the bug.
+      placeholder: |
+        1. Record a 45-second voice note
+        2. Send via voice.sh
+        3. Observe empty response
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or error output
+      description: n8n execution log, voice.sh terminal output, or HTTP response body.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware
+      description: CPU/APU, RAM, GPU (if applicable).
+      placeholder: "e.g. AMD Ryzen AI Max+ 395, 128GB, integrated Radeon 8060S"
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: OS and kernel
+      placeholder: "e.g. Ubuntu 24.04 LTS, kernel 6.8.0"
+    validations:
+      required: false
+
+  - type: input
+    id: whisper-version
+    attributes:
+      label: whisper.cpp build
+      placeholder: "e.g. b4321"
+    validations:
+      required: false

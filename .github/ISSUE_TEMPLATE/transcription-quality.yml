@@ -1,0 +1,62 @@
+name: Transcription Quality
+description: Report hallucinations, bad polish results, or language issues
+title: "[Quality]: "
+labels: ["transcription-quality"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What went wrong?
+      description: Describe the transcription issue.
+      placeholder: "e.g. Whisper hallucinates 'Thank you for watching' at the end of every recording"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: Issue category
+      options:
+        - Whisper hallucination (phantom text that was never spoken)
+        - Bad LLM polish (Qwen changed meaning or added content)
+        - Wrong language (transcript in wrong language)
+        - Missing text (part of speech not transcribed)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: language
+    attributes:
+      label: Language spoken
+      placeholder: "e.g. English, French, mixed EN/FR"
+    validations:
+      required: true
+
+  - type: textarea
+    id: transcript
+    attributes:
+      label: What you said vs. what you got
+      description: Include both the raw Whisper output and the Qwen-polished output if available.
+      placeholder: |
+        Spoken: "I need to fix the webhook configuration"
+        Whisper raw: "I need to fix the web hook configuration thank you for watching"
+        Qwen output: "I need to fix the webhook configuration. Thank you for watching."
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Audio length, background noise level, accent details, or any patterns you noticed.
+    validations:
+      required: false
+
+  - type: input
+    id: whisper-model
+    attributes:
+      label: Whisper model
+      placeholder: "e.g. large-v3-turbo Q5_0"
+    validations:
+      required: false
